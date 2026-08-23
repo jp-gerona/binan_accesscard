@@ -132,7 +132,7 @@ $noEligible = ! $noBatch && $c['eligible'] === 0;
 <section class="card batch-card mb-4" id="progressCard">
   <div class="card-body">
     <div class="d-flex justify-content-between align-items-center mb-3">
-      <h2 class="dashboard-zone-title mb-0">Distribution Progress</h2>
+      <h2 class="batch-pane-title mb-0">Distribution Progress</h2>
       <div>
         <span class="status-pill is-muted"><?= $batchOpen ? 'open' : 'closed' ?></span>
         <?php if ($batchOpen): ?>

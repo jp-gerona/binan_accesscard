@@ -65,7 +65,7 @@ $cards = [
   <div class="col-lg-8">
     <section class="card batch-card h-100">
       <div class="card-body">
-        <h2 class="dashboard-zone-title mb-3">Distributions</h2>
+        <h2 class="batch-pane-title">Distributions</h2>
         <div class="table-responsive">
           <table class="table manage-record-table align-middle w-100 mb-0">
             <thead>

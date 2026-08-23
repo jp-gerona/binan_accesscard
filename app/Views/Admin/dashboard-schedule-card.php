@@ -28,7 +28,7 @@ foreach ($scheduleGrid['bars'] as $bar) {
 <div class="card dash-schedule-card h-100">
   <div class="card-body">
     <div class="d-flex justify-content-between align-items-center mb-3">
-      <h2 class="dashboard-zone-title mb-0">Upcoming schedule</h2>
+      <h2 class="batch-pane-title mb-0">Upcoming schedule</h2>
       <a href="<?= esc(site_url('distribution?tab=schedule'), 'attr') ?>" class="small text-decoration-none">Open calendar</a>
     </div>
     <div class="mb-2">
