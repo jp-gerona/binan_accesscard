@@ -314,7 +314,7 @@ final class DashboardPaneUrlFeatureTest extends CIUnitTestCase
 
             // The outer strip, both its tabs, and the Overview pane it lands on.
             $this->assertStringContainsString('?view=distribution', $body, $role);
-            $this->assertStringContainsString('Program to date', $body, $role);
+            // $this->assertStringContainsString('Program to date', $body, $role);
             $this->assertStringContainsString('Families profiled', $body, $role);
             $this->assertStringContainsString('Access cards issued', $body, $role);
             $this->assertStringContainsString('never served', $body, $role);

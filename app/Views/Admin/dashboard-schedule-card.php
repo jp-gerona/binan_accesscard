@@ -25,12 +25,12 @@ foreach ($scheduleGrid['bars'] as $bar) {
     $barsByWeek[$bar['weekIndex']][] = $bar;
 }
 ?>
-<div class="card mb-4 dash-schedule-card">
-  <div class="card-header d-flex justify-content-between align-items-center">
-    <span><i class="bi bi-calendar-event me-1"></i>Distribution Schedule</span>
-    <a href="<?= esc(site_url('distribution?tab=schedule'), 'attr') ?>" class="small">Open calendar</a>
-  </div>
+<div class="card dash-schedule-card h-100">
   <div class="card-body">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <h2 class="dashboard-zone-title mb-0">Upcoming schedule</h2>
+      <a href="<?= esc(site_url('distribution?tab=schedule'), 'attr') ?>" class="small text-decoration-none">Open calendar</a>
+    </div>
     <div class="mb-2">
       <span class="fw-semibold"><?= esc(date('F Y')) ?></span>
     </div>

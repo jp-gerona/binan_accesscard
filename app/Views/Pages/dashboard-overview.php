@@ -38,7 +38,12 @@ $cards = [
     ['label' => 'Distributions hosted', 'value' => (int) $overviewStats['distributions'], 'sub' => null],
 ];
 ?>
-<h2 class="dashboard-zone-title">Program to date</h2>
+<header class="d-flex justify-content-end mb-4">
+  <a class="btn btn-primary reports-download-btn" href="<?= site_url('distribution/reports/pdf') ?>">
+    <i class="bi bi-file-earmark-arrow-down" aria-hidden="true"></i>
+    <span>Download Report</span>
+  </a>
+</header>
 
 <div class="row row-cols-2 row-cols-md-4 g-3 kpi-row">
   <?php foreach ($cards as $card): ?>
@@ -56,49 +61,55 @@ $cards = [
   <?php endforeach; ?>
 </div>
 
-<section class="batch-pane">
-  <h3 class="batch-pane-title">Distributions</h3>
-  <div class="table-responsive">
-    <table class="table manage-record-table align-middle w-100 mb-0">
-      <thead>
-        <tr><th>Batch</th><th>Status</th><th>Subsidy</th><th>Opened</th><th>Eligible</th><th>Served</th><th>Coverage</th></tr>
-      </thead>
-      <tbody>
-        <?php foreach ($distributionRows as $row): ?>
-        <tr>
-          <td>
-            <a href="<?= site_url('dashboard') ?>?view=distribution&batch=<?= esc((string) (int) $row['batch_id'], 'attr') ?>">
-              <?= esc((string) $row['name']) ?>
-            </a>
-          </td>
-          <td>
-            <?php if (($row['closed_at'] ?? null) !== null): ?>
-              <span class="badge bg-secondary">Closed</span>
-            <?php elseif (($row['started_at'] ?? null) === null): ?>
-              <span class="badge bg-info text-dark">Scheduled</span>
-            <?php else: ?>
-              <span class="badge bg-success">Open</span>
-            <?php endif; ?>
-          </td>
-          <td><?= esc((string) ($row['subsidy_type_name'] ?? '')) ?></td>
-          <td><?= ($row['started_at'] ?? null) === null ? 'Not yet started' : esc((string) $row['started_at']) ?></td>
-          <td><?= esc(number_format((int) $row['eligible'])) ?></td>
-          <td><?= esc(number_format((int) $row['served'])) ?></td>
-          <td><?= esc((string) (int) $row['coverage']) ?>%</td>
-        </tr>
-        <?php endforeach; ?>
-        <?php if ($distributionRows === []): ?>
-        <tr><td colspan="7" class="text-muted">No distribution has been run yet. Open one from the Distribution page.</td></tr>
-        <?php endif; ?>
-      </tbody>
-    </table>
+<div class="row g-4 mt-1">
+  <div class="col-lg-8">
+    <section class="card batch-card h-100">
+      <div class="card-body">
+        <h2 class="dashboard-zone-title mb-3">Distributions</h2>
+        <div class="table-responsive">
+          <table class="table manage-record-table align-middle w-100 mb-0">
+            <thead>
+              <tr><th>Batch</th><th>Status</th><th>Subsidy</th><th>Opened</th><th>Eligible</th><th>Served</th><th>Coverage</th></tr>
+            </thead>
+            <tbody>
+              <?php foreach ($distributionRows as $row): ?>
+              <tr>
+                <td>
+                  <a href="<?= site_url('dashboard') ?>?view=distribution&batch=<?= esc((string) (int) $row['batch_id'], 'attr') ?>">
+                    <?= esc((string) $row['name']) ?>
+                  </a>
+                </td>
+                <td>
+                  <?php if (($row['closed_at'] ?? null) !== null): ?>
+                    <span class="badge bg-secondary">Closed</span>
+                  <?php elseif (($row['started_at'] ?? null) === null): ?>
+                    <span class="badge bg-info text-dark">Scheduled</span>
+                  <?php else: ?>
+                    <span class="badge bg-success">Open</span>
+                  <?php endif; ?>
+                </td>
+                <td><?= esc((string) ($row['subsidy_type_name'] ?? '')) ?></td>
+                <td><?= ($row['started_at'] ?? null) === null ? 'Not yet started' : esc((string) $row['started_at']) ?></td>
+                <td><?= esc(number_format((int) $row['eligible'])) ?></td>
+                <td><?= esc(number_format((int) $row['served'])) ?></td>
+                <td><?= esc((string) (int) $row['coverage']) ?>%</td>
+              </tr>
+              <?php endforeach; ?>
+              <?php if ($distributionRows === []): ?>
+              <tr><td colspan="7" class="text-muted">No distribution has been run yet. Open one from the Distribution page.</td></tr>
+              <?php endif; ?>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
   </div>
-</section>
-
-<section class="batch-pane">
-  <h3 class="batch-pane-title">Upcoming schedule</h3>
-  <?= view('Admin/dashboard-schedule-card', [
-      'upcomingSchedule' => $upcomingSchedule ?? [],
-      'scheduleGrid'     => $scheduleGrid ?? ['weeks' => [], 'bars' => []],
-  ]) ?>
-</section>
+  
+  <div class="col-lg-4">
+    <?php /* dashboard-schedule-card is already a .card container but we omit its native title since we want a zone title */ ?>
+    <?= view('Admin/dashboard-schedule-card', [
+        'upcomingSchedule' => $upcomingSchedule ?? [],
+        'scheduleGrid'     => $scheduleGrid ?? ['weeks' => [], 'bars' => []],
+    ]) ?>
+  </div>
+</div>

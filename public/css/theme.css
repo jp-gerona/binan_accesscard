@@ -861,7 +861,7 @@ tr.is-highlighted td,
 /* Dashboard schedule card: drawn at one dashboard column's width, not the
    page's full width, so a multi-day batch's bar keeps the same proportion it
    has in the design mock. */
-.dash-schedule-card { max-width: 340px; }
+.dash-schedule-card { max-width: 100%; }
 
 /* Dashboard schedule card's month grid.
    One .dash-schedule-week per row: day numbers sit on grid row 1, and each
