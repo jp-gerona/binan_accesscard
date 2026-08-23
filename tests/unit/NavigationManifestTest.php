@@ -13,12 +13,12 @@ use Tests\Support\Database\DumpSchema;
  */
 final class NavigationManifestTest extends CIUnitTestCase
 {
-    public function testSidebarIsSevenLinksInFourHeadings(): void
+    public function testSidebarIsEightLinksInFourHeadings(): void
     {
-        $this->assertCount(7, Navigation::LINKS);
+        $this->assertCount(8, Navigation::LINKS);
 
         $headings = array_values(array_unique(array_column(Navigation::LINKS, 'heading')));
-        $this->assertSame(['Core', 'Profiling', 'Distribution', 'Administration'], $headings);
+        $this->assertSame(['Dashboard', 'Profiling', 'Distribution', 'Administration'], $headings);
     }
 
     public function testEveryEntryIsFullyFormed(): void

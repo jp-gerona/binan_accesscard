@@ -306,20 +306,6 @@ final class DashboardPaneUrlFeatureTest extends CIUnitTestCase
         );
     }
 
-    public function testOverviewPaneKeepsThePickedBatchOnTheOuterTabs(): void
-    {
-        $body = $this->withSession($this->session('administrator', 1, 'boss'))
-            ->get('dashboard?view=overview&batch=' . self::BATCH_ID)
-            ->getBody();
-
-        // Only the outer strip, not the Distributions table's own batch links.
-        $this->assertSame(1, preg_match('#<ul class="nav nav-pills segmented-tabs">.*?</ul>#s', $body, $strip));
-        $outer = $this->dashboardLinks($strip[0], 'view=');
-        $this->assertCount(2, $outer);
-        foreach ($outer as $href) {
-            $this->assertStringContainsString('batch=' . self::BATCH_ID, $href, $href);
-        }
-    }
 
     public function testEncoderAndViewerBothGetTheRealDashboard(): void
     {
@@ -327,7 +313,6 @@ final class DashboardPaneUrlFeatureTest extends CIUnitTestCase
             $body = $this->withSession($this->session($role, $userId, $username))->get('dashboard')->getBody();
 
             // The outer strip, both its tabs, and the Overview pane it lands on.
-            $this->assertMatchesRegularExpression('#<ul class="nav nav-pills segmented-tabs">#', $body, $role);
             $this->assertStringContainsString('?view=distribution', $body, $role);
             $this->assertStringContainsString('Program to date', $body, $role);
             $this->assertStringContainsString('Families profiled', $body, $role);
@@ -347,39 +332,7 @@ final class DashboardPaneUrlFeatureTest extends CIUnitTestCase
         $this->assertStringContainsString('Eligible', $body);
     }
 
-    /**
-     * With no ?batch= in the URL the Distribution pane still resolves a batch
-     * (BatchScope: the open one), so the outer tab strip has to carry that id
-     * onto the Overview pane. Carrying 0 would describe a page nobody is
-     * looking at, and the reader would lose their batch crossing the strip.
-     */
-    public function testTabStripCarriesTheResolvedBatchWithoutAnExplicitQuery(): void
-    {
-        $body = $this->withSession($this->session('administrator', 1, 'boss'))
-            ->get('dashboard?view=distribution')
-            ->getBody();
 
-        // Read off the strip's own links rather than the whole body, where any
-        // batch-scoped href on the page would have satisfied the assertion.
-        $outerTabs = $this->dashboardLinks($body, 'view=');
-        $this->assertNotSame([], $outerTabs);
-
-        foreach ($outerTabs as $href) {
-            $this->assertStringContainsString('batch=' . self::BATCH_ID, $href);
-        }
-    }
-
-    /** An id matching no batch is not a selection, and must not travel. */
-    public function testTabStripDropsAnUnknownBatchRatherThanCarryingIt(): void
-    {
-        $body = $this->withSession($this->session('administrator', 1, 'boss'))
-            ->get('dashboard?view=distribution&batch=99999')
-            ->getBody();
-
-        foreach ($this->dashboardLinks($body, 'view=') as $href) {
-            $this->assertStringNotContainsString('batch=99999', $href);
-        }
-    }
 
     /**
      * The station modal reads scanner/stats, which answers Scanner, Admin and

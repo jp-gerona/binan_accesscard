@@ -20,8 +20,12 @@ class Navigation
      */
     public const LINKS = [
         [
-            'key' => 'dashboard', 'label' => 'Dashboard', 'icon' => 'bi-grid',
-            'route' => 'dashboard', 'heading' => 'Core', 'roles' => self::ALL_STAFF,
+            'key' => 'dashboard', 'label' => 'Program Overview', 'icon' => 'bi-grid',
+            'route' => 'dashboard', 'heading' => 'Dashboard', 'roles' => self::ALL_STAFF,
+        ],
+        [
+            'key' => 'dashboard-distribution', 'label' => 'Batch Progress', 'icon' => 'bi-bar-chart-fill',
+            'route' => 'dashboard?view=distribution', 'heading' => 'Dashboard', 'roles' => self::ALL_STAFF,
         ],
         [
             'key' => 'records', 'label' => 'Family Records', 'icon' => 'bi-people',

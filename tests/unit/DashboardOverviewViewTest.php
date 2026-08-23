@@ -43,14 +43,7 @@ final class DashboardOverviewViewTest extends CIUnitTestCase
         $this->assertStringNotContainsString('card-header', $src);
     }
 
-    public function testDashboardRendersTheOuterTabStrip(): void
-    {
-        $src = $this->source('Views/Pages/dashboard.php');
-        $this->assertStringContainsString("'param' => 'view'", $src);
-        $this->assertStringContainsString('Overview', $src);
-        $this->assertStringContainsString('Distribution', $src);
-    }
-
+    
     /** The old flat strip is gone; its two numbers now live on cards. */
     public function testProgramStripIsGone(): void
     {

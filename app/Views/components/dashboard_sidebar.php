@@ -15,6 +15,9 @@ use Config\Navigation;
 
 $role = (string) ($role ?? '');
 $activePage = (string) ($activePage ?? '');
+if ($activePage === 'dashboard' && ($_GET['view'] ?? '') === 'distribution') {
+    $activePage = 'dashboard-distribution';
+}
 $links = Navigation::linksFor($role);
 $renderedHeading = null;
 ?>
