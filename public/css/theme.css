@@ -28,12 +28,12 @@
        dark, steps 100/250/350/450/550/650 of the documented blue scale so the
        lightest step ("staffed, served nobody") still reads as a real color,
        not the surface. Same blue family as --chart-color-1, matched hue. */
-    --heat-0: #cde2fb;
-    --heat-1: #86b6ef;
-    --heat-2: #5598e7;
-    --heat-3: #2a78d6;
-    --heat-4: #1c5cab;
-    --heat-5: #104281;
+    --heat-0: #d4edd9;
+    --heat-1: #98d1a6;
+    --heat-2: #65b87c;
+    --heat-3: #2fa155;
+    --heat-4: #1d7b3e;
+    --heat-5: #145c3b;
     --heat-closed-base: #eaecf4;
     --heat-closed-stripe: #dee2e6;
 }
@@ -728,11 +728,9 @@
 }
 
 .batch-pane-title {
-    font-size: 0.78rem;
+    font-size: 1.05rem;
     font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: #7a8783;
+    color: #000;
     margin-bottom: 0.75rem;
 }
 
@@ -781,7 +779,7 @@
 .barangay-map path.is-none { fill: #f8f9fa; }
 .barangay-map path.is-low  { fill: #cfe2f3; }
 .barangay-map path.is-mid  { fill: #7bb0e0; }
-.barangay-map path.is-high { fill: #2e75b6; }
+.barangay-map path.is-high { fill: #1d7b3e; }
 
 .barangay-map path:hover,
 .barangay-map path:focus {

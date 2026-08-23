@@ -51,24 +51,13 @@ $noBatch = $batchRow === null;
 $noEligible = ! $noBatch && $c['eligible'] === 0;
 ?>
 
-<header class="batch-head">
-  <?php /* A fixed heading, not the batch name: the selector on the right
-           already carries the name, and printing it twice reads as two
-           different scopes. The batch's state goes under the figure it
-           qualifies, in .batch-progress-sub. */ ?>
-  <h2>This batch</h2>
-  <div class="section-actions">
+<header class="d-flex justify-content-between align-items-center mb-4">
+  <div class="d-flex gap-2 align-items-center">
     <?php if ($batches !== []): ?>
-    <form class="reports-filter" method="get" action="<?= site_url('dashboard') ?>">
-      <?php /* A GET form submits only its own fields, so the pane has to ride
-               along or picking a batch drops the reader back on Overview. Same
-               fix the scanner performance page's batch selector already
-               carries. The sub-tab used to ride along too and no longer
-               exists; the picked day deliberately does not, because a day of
-               one batch is not a day of the next. */ ?>
+    <form class="reports-filter m-0" method="get" action="<?= site_url('dashboard') ?>">
       <input type="hidden" name="view" value="distribution">
       <label for="batchPick" class="form-label mb-0 visually-hidden">Batch</label>
-      <select class="form-select" id="batchPick" name="batch" onchange="this.form.submit()">
+      <select class="form-select w-auto" id="batchPick" name="batch" onchange="this.form.submit()">
         <?php foreach ($batches as $b): ?>
           <option value="<?= esc($b['batch_id'], 'attr') ?>" <?= $batchId === (int) $b['batch_id'] ? 'selected' : '' ?>>
             <?= esc($b['name']) ?><?= $b['closed_at'] === null ? ' (open)' : '' ?>
@@ -77,13 +66,10 @@ $noEligible = ! $noBatch && $c['eligible'] === 0;
       </select>
     </form>
     <?php endif; ?>
+    
     <?php if (! $noBatch && ! $noEligible): ?>
-    <?php /* Deliberately outside the batch form: this control filters the page
-             in place (batch-heatmap.js writes ?day= with replaceState) rather
-             than reloading, and it is the same selection the heatmap's row
-             headers make, so it must not submit anything on its own. */ ?>
     <label for="dayPick" class="form-label mb-0 visually-hidden">Day</label>
-    <select class="form-select" id="dayPick">
+    <select class="form-select w-auto" id="dayPick">
       <option value=""<?= $selectedDay === null ? ' selected' : '' ?>>All days</option>
       <?php foreach ($byDay as $index => $day): ?>
       <option value="<?= esc($day['date'], 'attr') ?>"<?= $selectedDay === $day['date'] ? ' selected' : '' ?>>
@@ -92,6 +78,9 @@ $noEligible = ! $noBatch && $c['eligible'] === 0;
       <?php endforeach; ?>
     </select>
     <?php endif; ?>
+  </div>
+  
+  <div>
     <?php if (! $noBatch): ?>
     <a class="btn btn-primary reports-download-btn" href="<?= site_url('distribution/reports/pdf') . '?batch=' . (int) $batchId ?>"><i class="bi bi-file-earmark-arrow-down" aria-hidden="true"></i><span>Download Report</span></a>
     <?php endif; ?>
@@ -140,29 +129,41 @@ $noEligible = ! $noBatch && $c['eligible'] === 0;
   </div>
 </div>
 
-<div class="progress batch-bar" id="coverageProgress" role="progressbar"
-     aria-label="Coverage"
-     aria-valuenow="<?= esc((string) $c['coverage'], 'attr') ?>"
-     aria-valuemin="0" aria-valuemax="100">
-  <div class="progress-bar" id="coverageProgressFill" style="width: <?= esc((string) $c['coverage'], 'attr') ?>%"></div>
-</div>
-<p class="batch-progress-sub">
-  <?php /* Always rendered (hidden at 0) so the live poll can reveal it in
-           place without inserting new markup mid-batch. */ ?>
-  <span id="voidedTileWrap"<?= $c['voided'] > 0 ? '' : ' class="d-none"' ?>>
-    <span id="voidedTileValue"><?= esc((string) $c['voided']) ?></span> voided &middot;</span>
-  <span id="remainingTileWrap"><span id="remainingTileValue"><?= esc(number_format($c['remaining'])) ?></span>
-    <?= $batchOpen ? 'remaining' : 'not claimed' ?> &middot;</span>
-  <span id="progressCoverageWrap"><span id="progressCoverage"><?= esc((string) $c['coverage']) ?></span>% coverage &middot;</span>
-  <?php /* The state reads as a pill rather than a sentence, matching the "open"
-           pill on the Overview pane's Distributions table. Not a Bootstrap
-           alert: an alert is a block banner for something needing attention,
-           and a batch being closed is the steady state of most batches. */ ?>
-  <span class="status-pill is-muted"><?= $batchOpen ? 'open' : 'closed' ?></span>
-  <?php if ($batchOpen): ?>
-    updated <span id="lastUpdated">-</span>
-  <?php endif; ?>
-</p>
+<section class="card batch-card mb-4" id="progressCard">
+  <div class="card-body">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <h2 class="dashboard-zone-title mb-0">Distribution Progress</h2>
+      <div>
+        <span class="status-pill is-muted"><?= $batchOpen ? 'open' : 'closed' ?></span>
+        <?php if ($batchOpen): ?>
+          <span class="text-muted small ms-2">updated <span id="lastUpdated">-</span></span>
+        <?php endif; ?>
+      </div>
+    </div>
+    
+    <div class="d-flex align-items-center mb-2">
+      <div class="fs-1 fw-bold text-dark me-2 lh-1"><span id="progressCoverage"><?= esc((string) $c['coverage']) ?></span>%</div>
+    </div>
+    
+    <div class="progress mb-4" id="coverageProgress" role="progressbar"
+         aria-label="Coverage"
+         aria-valuenow="<?= esc((string) $c['coverage'], 'attr') ?>"
+         aria-valuemin="0" aria-valuemax="100" style="height: 12px; border-radius: 6px; background-color: var(--token-gray-200);">
+      <div class="progress-bar" id="coverageProgressFill" style="width: <?= esc((string) $c['coverage'], 'attr') ?>%; background-color: var(--token-primary-green);"></div>
+    </div>
+    
+    <div class="d-flex gap-5">
+      <div id="remainingTileWrap">
+        <div class="text-muted small text-uppercase fw-bold" style="letter-spacing: 0.04em;"><?= $batchOpen ? 'Remaining' : 'Not claimed' ?></div>
+        <div class="fs-5 fw-semibold text-dark"><span id="remainingTileValue"><?= esc(number_format($c['remaining'])) ?></span></div>
+      </div>
+      <div id="voidedTileWrap"<?= $c['voided'] > 0 ? '' : ' class="d-none"' ?>>
+        <div class="text-muted small text-uppercase fw-bold" style="letter-spacing: 0.04em;">Voided</div>
+        <div class="fs-5 fw-semibold text-dark"><span id="voidedTileValue"><?= esc((string) $c['voided']) ?></span></div>
+      </div>
+    </div>
+  </div>
+</section>
 
 <?= view('Admin/batch-activity-card', [
     'heatmap'        => $heatmap,

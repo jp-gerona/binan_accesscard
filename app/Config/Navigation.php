@@ -24,7 +24,7 @@ class Navigation
             'route' => 'dashboard', 'heading' => 'Dashboard', 'roles' => self::ALL_STAFF,
         ],
         [
-            'key' => 'dashboard-distribution', 'label' => 'Batch Progress', 'icon' => 'bi-bar-chart-fill',
+            'key' => 'dashboard-distribution', 'label' => 'Batch Progress', 'icon' => 'bi-bar-chart',
             'route' => 'dashboard?view=distribution', 'heading' => 'Dashboard', 'roles' => self::ALL_STAFF,
         ],
         [
