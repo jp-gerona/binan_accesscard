@@ -56,6 +56,10 @@ $routes->group('records', ['filter' => 'roleNav:records-import'], static functio
     $routes->post('import/review/(:num)/apply', 'Families\FamilyImportController::reviewRowApply/$1');
 });
 
+$routes->group('records', ['filter' => 'roleNav:records-completeness'], static function (RouteCollection $routes): void {
+    $routes->get('completeness', 'Admin\DashboardController::dataCompleteness');
+});
+
 /*
  * Resource convention: the bare id shows the record read-only, `/edit` is the
  * form. The mode is a path segment, not a query flag, so the route filter can

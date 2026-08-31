@@ -13,9 +13,9 @@ use Tests\Support\Database\DumpSchema;
  */
 final class NavigationManifestTest extends CIUnitTestCase
 {
-    public function testSidebarIsEightLinksInFourHeadings(): void
+    public function testSidebarIsNineLinksInFourHeadings(): void
     {
-        $this->assertCount(8, Navigation::LINKS);
+        $this->assertCount(9, Navigation::LINKS);
 
         $headings = array_values(array_unique(array_column(Navigation::LINKS, 'heading')));
         $this->assertSame(['Dashboard', 'Profiling', 'Distribution', 'Administration'], $headings);
@@ -66,6 +66,20 @@ final class NavigationManifestTest extends CIUnitTestCase
     {
         $this->assertSame('Family Records', Navigation::titleFor('records'));
         $this->assertSame('Account Management', Navigation::titleFor('accounts'));
+    }
+
+    public function testRecordsCompletenessEntry(): void
+    {
+        $links = array_values(array_filter(
+            Navigation::LINKS,
+            static fn (array $link): bool => $link['key'] === 'records-completeness'
+        ));
+
+        $this->assertCount(1, $links);
+        $this->assertSame('Data Completeness', $links[0]['label']);
+        $this->assertSame('Profiling', $links[0]['heading']);
+        $this->assertSame(['Developer', 'Admin', 'Encoder'], $links[0]['roles']);
+        $this->assertSame('records/completeness', $links[0]['route']);
     }
 
     public function testEveryUnlistedPageDeclaresAParent(): void

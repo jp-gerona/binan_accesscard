@@ -65,6 +65,15 @@ class DashboardController extends BaseController
     }
 
     /**
+     * GET `records/completeness`. The Data Completeness work queue: families
+     * whose records imported (or were entered) with blank profile fields.
+     */
+    public function dataCompleteness(): string
+    {
+        return (new DashboardPageBuilder($this->request))->renderPage('records-completeness');
+    }
+
+    /**
      * GET `audit-trails`. Renders the audit log page, or the audit fragment
      * for AJAX search/filtering.
      */
