@@ -230,7 +230,7 @@ final class FamilyExcelImporterTest extends CIUnitTestCase
         $this->assertSame('warning', $contig[0]['severity']);
     }
 
-    // -- barangay (blocking) / contact / suffix / duplicate-person (warnings) --
+    // -- barangay / contact / suffix / duplicate-person (warnings) -----------
 
     public function testBarangayToleratesSpellingButFlagsNonBarangays(): void
     {
@@ -241,14 +241,16 @@ final class FamilyExcelImporterTest extends CIUnitTestCase
         ]);
         $this->assertNotContains('BRGY', $this->codes($ok));
 
-        // "Santa Rosa" is a different city - blocking, since it resolves to no barangayID
-        // and the address column no longer carries the barangay name.
+        // "Santa Rosa" is another city: it resolves to no barangayID, so it warns and the
+        // head imports with no barangay (the family is queued on the Data Completeness report).
         $bad = $this->importer()->validateAndBuild([
             $this->headRow(3, '6003', ['barangay' => 'Santa Rosa']),
         ]);
         $brgy = array_values(array_filter($bad['errors'], static fn (array $e): bool => $e['code'] === 'BRGY'));
         $this->assertCount(1, $brgy);
-        $this->assertSame('blocking', $brgy[0]['severity']);
+        $this->assertSame('warning', $brgy[0]['severity']);
+        $this->assertSame(0, $bad['counts']['blocking']);
+        $this->assertNull($bad['families'][0]['headPayload']['barangayID']);
     }
 
     public function testContactNumberMustBe09Plus11Digits(): void
@@ -300,19 +302,63 @@ final class FamilyExcelImporterTest extends CIUnitTestCase
         $this->assertNull($result['families'][0]['headPayload']['suffix']);
     }
 
-    public function testFutureBirthdayIsBlockingNotAWarning(): void
+    public function testInvalidSexWarnsAndImportsBlank(): void
     {
-        // A future birthday is rejected by MemberModel's not_future_date rule on write, so the
-        // review must block it (BDAY-FUTURE) — not warn — or the whole family silently fails to
-        // import. See FamilyExcelImporter::checkBirthdayRange().
+        $result = $this->importer()->validateAndBuild([
+            $this->headRow(3, '6001', ['sex' => 'Xyz']),
+        ]);
+
+        $this->assertSame(0, $result['counts']['blocking']);
+        $sex = $this->errorsFor($result, 'SEX');
+        $this->assertCount(1, $sex);
+        $this->assertSame('warning', $sex[0]['severity']);
+        $this->assertStringContainsString('Xyz', $sex[0]['message']);
+        $this->assertNull($result['families'][0]['headPayload']['sex']);
+    }
+
+    public function testUnreadableIncomeWarnsAndImportsBlank(): void
+    {
+        $result = $this->importer()->validateAndBuild([
+            $this->headRow(3, '6001', ['monthlyincome' => 'MINIMUM WAGE']),
+        ]);
+
+        $this->assertSame(0, $result['counts']['blocking']);
+        $income = $this->errorsFor($result, 'INCOME');
+        $this->assertCount(1, $income);
+        $this->assertSame('warning', $income[0]['severity']);
+        $this->assertStringContainsString('MINIMUM WAGE', $income[0]['message']);
+        $this->assertNull($result['families'][0]['headPayload']['salary']);
+    }
+
+    public function testUnparseableBirthdayWarnsAndImportsBlank(): void
+    {
+        $result = $this->importer()->validateAndBuild([
+            $this->headRow(3, '6001', ['birthday' => '03-07']),
+        ]);
+
+        $this->assertSame(0, $result['counts']['blocking']);
+        $bday = $this->errorsFor($result, 'BDAY');
+        $this->assertCount(1, $bday);
+        $this->assertSame('warning', $bday[0]['severity']);
+        $this->assertStringContainsString('03-07', $bday[0]['message']);
+        $this->assertNull($result['families'][0]['headPayload']['birthday']);
+    }
+
+    public function testFutureBirthdayWarnsAndImportsBlank(): void
+    {
+        // MemberModel's not_future_date rule rejects a future birthday at write time
+        // and rolls back the family, so the import stores NULL instead and warns.
+        // The original value stays quoted in the message for the spreadsheet fixer.
         $result = $this->importer()->validateAndBuild([
             $this->headRow(3, '6001', ['birthday' => '01-01-2050']),
         ]);
+
+        $this->assertSame(0, $result['counts']['blocking']);
         $future = $this->errorsFor($result, 'BDAY-FUTURE');
-        $this->assertCount(1, $future, 'a future birthday must be flagged BDAY-FUTURE');
-        $this->assertSame('blocking', $future[0]['severity']);
-        $this->assertSame('birthday', $future[0]['field']);
-        $this->assertNotContains('BDAY', $this->codes($result)); // valid format, just future
+        $this->assertCount(1, $future);
+        $this->assertSame('warning', $future[0]['severity']);
+        $this->assertStringContainsString('01-01-2050', $future[0]['message']);
+        $this->assertNull($result['families'][0]['headPayload']['birthday']);
     }
 
     public function testOver150YearsWarnsButStillImports(): void
@@ -743,9 +789,8 @@ final class FamilyExcelImporterTest extends CIUnitTestCase
     }
 
     /**
-     * A complete member row by default: members now require the same personal fields as the
-     * head (birthday, sex, civil status, education, job, monthly income). Address/Barangay
-     * stay blank - members inherit the head's. Tests that need a gap override the key.
+     * A complete member row by default; a member's blank personal fields import as NULL
+     * with an INCOMPLETE warning.
      *
      * @param array<string,string> $overrides
      */

@@ -1080,8 +1080,11 @@ class FamilyExcelImporter
     }
 
     /**
-     * Validates a birthday cell (MM-DD-YYYY, legacy YYYY-MM-DD accepted). Blank imports
-     * as NULL with an INCOMPLETE warning. Returns the stored Y-m-d value or null.
+     * Validates a birthday cell. Blank, unparseable, and future values all import
+     * as NULL with a warning, so the write step's not_future_date rule can never
+     * roll a family back; the original text is quoted so the spreadsheet fixer can
+     * see it. A date over 150 years past warns but still imports as typed (the DB
+     * accepts it, and 150 is past the oldest human on record).
      */
     private function validateBirthday(int $row, string $familyNo, string $value): ?string
     {
@@ -1093,50 +1096,52 @@ class FamilyExcelImporter
             return null;
         }
 
-        foreach (['m-d-Y', 'Y-m-d'] as $format) {
-            $date = \DateTimeImmutable::createFromFormat('!' . $format, $value);
+        $date = $this->parseSheetBirthday($value);
 
-            if ($date !== false && $date->format($format) === $value) {
-                $this->checkBirthdayRange($row, $familyNo, $date, $value);
+        if ($date === null) {
+            $this->addError($row, $familyNo, 'BDAY', 'birthday',
+                'Birthday "' . $value . '" could not be read (use MM-DD-YYYY) - imports with no birthday.'
+                . ' The family is listed on the Data Completeness report.', 'warning');
 
-                return $date->format('Y-m-d');
-            }
+            return null;
         }
 
-        $this->addError($row, $familyNo, 'BDAY', 'birthday', 'Birthday "' . $value . '" is not a valid date (use MM-DD-YYYY).');
-
-        return null;
-    }
-
-    /**
-     * Flags an implausible but validly-formatted birthday. Two cases, deliberately different
-     * severities so the review matches what the write step will actually accept:
-     *
-     *   future date  -> BLOCKING. MemberModel's `not_future_date` rule rejects the row on write,
-     *                   and one bad member rolls back its whole family (one family = one
-     *                   transaction). Passing it as a warning let entire families vanish on
-     *                   import with only a generic "could not save" - so block it in review and
-     *                   name the exact cell to fix.
-     *   over 150 yrs -> warning. The DB stores it fine (150 is past the ~122-year record, so it
-     *                   can't be a real person - only a typo), so flag but allow.
-     *
-     * Both bounds track today automatically.
-     */
-    private function checkBirthdayRange(int $row, string $familyNo, \DateTimeImmutable $date, string $raw): void
-    {
         $today = new \DateTimeImmutable('today');
 
         if ($date > $today) {
             $this->addError($row, $familyNo, 'BDAY-FUTURE', 'birthday',
-                'Birthday "' . $raw . '" is in the future - please check the year.');
+                'Birthday "' . $value . '" is in the future - imports with no birthday.'
+                . ' The family is listed on the Data Completeness report.', 'warning');
 
-            return;
+            return null;
         }
 
         if ($date < $today->modify('-150 years')) {
             $this->addError($row, $familyNo, 'BDAY-RANGE', 'birthday',
-                'Birthday "' . $raw . '" is over 150 years ago - please check the year.', 'warning');
+                'Birthday "' . $value . '" is over 150 years ago - please check the year.', 'warning');
         }
+
+        return $date->format('Y-m-d');
+    }
+
+    /**
+     * Parses a sheet birthday. Task 4 makes this tolerant of the spacing, dash and
+     * slash variants the real Cluster1 file contains; for now it is the strict
+     * M-D-Y / Y-m-d round-trip the old validateBirthday() used.
+     */
+    private function parseSheetBirthday(string $value): ?\DateTimeImmutable
+    {
+        $value = trim($value);
+
+        foreach (['m-d-Y', 'Y-m-d'] as $format) {
+            $date = \DateTimeImmutable::createFromFormat('!' . $format, $value);
+
+            if ($date !== false && $date->format($format) === $value) {
+                return $date;
+            }
+        }
+
+        return null;
     }
 
     /** Validates a sex cell against Male/Female. Blank imports as NULL with an INCOMPLETE warning. */
@@ -1158,7 +1163,9 @@ class FamilyExcelImporter
             return 'FEMALE';
         }
 
-        $this->addError($row, $familyNo, 'SEX', 'sex', 'Sex "' . $value . '" must be Male or Female.');
+        $this->addError($row, $familyNo, 'SEX', 'sex',
+            'Sex "' . $value . '" is not Male or Female - imports with no sex.'
+            . ' The family is listed on the Data Completeness report.', 'warning');
 
         return null;
     }
@@ -1191,7 +1198,9 @@ class FamilyExcelImporter
             return $numeric;
         }
 
-        $this->addError($row, $familyNo, 'INCOME', 'monthlyincome', 'Monthly income "' . $value . '" is not a valid bracket or number.');
+        $this->addError($row, $familyNo, 'INCOME', 'monthlyincome',
+            'Monthly income "' . $value . '" could not be read as a bracket or amount - imports with no income.'
+            . ' The family is listed on the Data Completeness report.', 'warning');
 
         return null;
     }
@@ -1308,11 +1317,11 @@ class FamilyExcelImporter
     }
 
     /**
-     * Blocks a head whose barangay isn't one of the official Biñan barangays. The match is
+     * Flags a head whose barangay isn't one of the official Biñan barangays. The match is
      * tolerant (case, ñ, dots and the "(...)" alias are ignored) so "Biñan"/"Sto. Tomas"
-     * still pass; only a genuine non-barangay is flagged. Blocking since V22: the barangay
-     * is stored as member.barangayID, so a value that resolves to no row is not saved at
-     * all. Letting it through would import the head with no barangay.
+     * still pass; only a genuine non-barangay is flagged. Since V22 the barangay is stored
+     * as member.barangayID, so a value that resolves to no row is not saved at all - the
+     * head imports with no barangay and the family is queued on the Data Completeness report.
      */
     private function validateBarangay(int $row, string $familyNo, string $value): void
     {
@@ -1327,7 +1336,8 @@ class FamilyExcelImporter
 
         if (! isset($known[$this->normalizeBarangay($value)])) {
             $this->addError($row, $familyNo, 'BRGY', 'barangay',
-                'Barangay "' . $value . '" is not an official Biñan barangay - please check the spelling.');
+                'Barangay "' . $value . '" is not an official Biñan barangay - imports with no barangay.'
+                . ' The family is listed on the Data Completeness report.', 'warning');
         }
     }
 
