@@ -1125,18 +1125,41 @@ class FamilyExcelImporter
     }
 
     /**
-     * Parses a sheet birthday. Task 4 makes this tolerant of the spacing, dash and
-     * slash variants the real Cluster1 file contains; for now it is the strict
-     * M-D-Y / Y-m-d round-trip the old validateBirthday() used.
+     * Parses a sheet birthday tolerantly. Inner spaces are removed ("11- 30-2017"),
+     * doubled dashes collapse ("10-12--2019"), "=" becomes "-" ("03-02=2020"), and
+     * "/" separators become "-" in the template's M-D-Y order ("9/23/1989"). A
+     * single-digit month or day is zero-padded ("9/23/1989" -> "09-23-1989") so the
+     * M-D-Y round-trip accepts it. The value must still be a FULL real date:
+     * truncated ("03-07"), year-only ("2008"), and 5-digit years fail the round-trip
+     * and return null. Shared by validateBirthday() and normalizeBirthday() so the
+     * duplicate checks see the same dates the payload stores.
      */
     private function parseSheetBirthday(string $value): ?\DateTimeImmutable
     {
-        $value = trim($value);
+        $s = trim($value);
+        $s = preg_replace('/\s+/u', '', $s) ?? $s;
+        $s = str_replace(['=', '/'], '-', $s);
+
+        while (str_contains($s, '--')) {
+            $s = str_replace('--', '-', $s);
+        }
+
+        // Zero-pad a single-digit month/day in what is clearly the M-D-Y form, so
+        // the round-trip guard below sees "9-23-1989" as "09-23-1989".
+        $parts = explode('-', $s);
+
+        if (count($parts) === 3) {
+            [$a, $b, $c] = $parts;
+
+            if (preg_match('/^\d{1,2}$/', $a) && preg_match('/^\d{1,2}$/', $b) && preg_match('/^\d{4}$/', $c)) {
+                $s = str_pad($a, 2, '0', STR_PAD_LEFT) . '-' . str_pad($b, 2, '0', STR_PAD_LEFT) . '-' . $c;
+            }
+        }
 
         foreach (['m-d-Y', 'Y-m-d'] as $format) {
-            $date = \DateTimeImmutable::createFromFormat('!' . $format, $value);
+            $date = \DateTimeImmutable::createFromFormat('!' . $format, $s);
 
-            if ($date !== false && $date->format($format) === $value) {
+            if ($date !== false && $date->format($format) === $s) {
                 return $date;
             }
         }
@@ -1488,24 +1511,15 @@ class FamilyExcelImporter
         }
     }
 
-    /** Y-m-d for a sheet birthday, or null when blank/unparseable. Emits no errors. */
+    /**
+     * Y-m-d for a sheet birthday, or null when blank/unparseable. Emits no errors.
+     * Tolerant, shared with parseSheetBirthday(), so identity keys match the payload's dates.
+     */
     private function normalizeBirthday(string $value): ?string
     {
-        $value = trim($value);
+        $date = $this->parseSheetBirthday($value);
 
-        if ($value === '') {
-            return null;
-        }
-
-        foreach (['m-d-Y', 'Y-m-d'] as $format) {
-            $date = \DateTimeImmutable::createFromFormat('!' . $format, $value);
-
-            if ($date !== false && $date->format($format) === $value) {
-                return $date->format('Y-m-d');
-            }
-        }
-
-        return null;
+        return $date === null ? null : $date->format('Y-m-d');
     }
 
     /**

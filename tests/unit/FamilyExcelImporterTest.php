@@ -415,6 +415,58 @@ final class FamilyExcelImporterTest extends CIUnitTestCase
         }
     }
 
+    public function testBirthdayToleratesTheRealFilesFormatVariants(): void
+    {
+        // Every variant measured in the Cluster1 review: inner space, doubled dash,
+        // equals sign, slash separator. Same M-D-Y order the template specifies.
+        $variants = [
+            '11- 30-2017' => '2017-11-30',
+            '10-12--2019' => '2019-10-12',
+            '05--06-1958' => '1958-05-06',
+            '03-02=2020'  => '2020-03-02',
+            '9/23/1989'   => '1989-09-23',
+        ];
+
+        foreach ($variants as $typed => $stored) {
+            $result = $this->importer()->validateAndBuild([
+                $this->headRow(3, '6001', ['birthday' => $typed]),
+            ]);
+
+            $this->assertNotContains('BDAY', $this->codes($result), "'{$typed}' must parse");
+            $this->assertSame($stored, $result['families'][0]['headPayload']['birthday'],
+                "'{$typed}' should store {$stored}");
+        }
+    }
+
+    public function testBirthdayTruncatedOrYearOnlyStillWarns(): void
+    {
+        // No parser can invent the missing parts; these import blank and are chased
+        // on the Data Completeness report.
+        foreach (['03-07', '01-11-', '2008', '1/21/20104'] as $typed) {
+            $result = $this->importer()->validateAndBuild([
+                $this->headRow(3, '6001', ['birthday' => $typed]),
+            ]);
+
+            $this->assertContains('BDAY', $this->codes($result), "'{$typed}' should warn");
+            $this->assertNull($result['families'][0]['headPayload']['birthday']);
+        }
+    }
+
+    public function testDuplicateMatchingSeesTolerantBirthdayFormats(): void
+    {
+        // normalizeBirthday feeds the DUP-DB / DUP-PERSON identity keys, so it must
+        // parse "9/23/1989" the same way validateBirthday does, or a re-entered
+        // person with the slash format silently fails to match their record.
+        $importer = new FamilyExcelImporter();
+        $reflection = new ReflectionClass($importer);
+        $method = $reflection->getMethod('normalizeBirthday');
+        $method->setAccessible(true);
+
+        $this->assertSame('1989-09-23', $method->invoke($importer, '9/23/1989'));
+        $this->assertSame('2017-11-30', $method->invoke($importer, '11- 30-2017'));
+        $this->assertNull($method->invoke($importer, '2008'));
+    }
+
     public function testOverLongValueIsBlocked(): void
     {
         $result = $this->importer()->validateAndBuild([
