@@ -41,20 +41,23 @@ class ImportReviewPresenter
         'HEAD-MULTI' => ['label' => 'More than one Head',          'hint' => 'Only one person per family can be the Head.'],
         'FP-ADDR'    => ['label' => 'Two addresses under one QR',  'hint' => 'One QR = one household. Fix the mistyped QR, or give the other household its own QR.'],
         'REQUIRED'   => ['label' => 'Missing required value',      'hint' => 'Fill in the cell.'],
-        'BDAY'       => ['label' => 'Invalid birthday',            'hint' => 'Use the format MM-DD-YYYY.'],
-        'SEX'        => ['label' => 'Invalid sex',                 'hint' => 'Use Male or Female.'],
-        'INCOME'     => ['label' => 'Invalid monthly income',      'hint' => 'Use a bracket label or a number.'],
-        'SERVICE'    => ['label' => 'Unknown service code',        'hint' => 'Use a code from the Reference sheet.'],
+        'INCOMPLETE' => ['label' => 'Missing value (imports blank)', 'hint' => 'Blank cells import as blank. The family is listed on the Data Completeness report until the data is collected.'],
+        'BDAY'       => ['label' => 'Invalid birthday',            'hint' => 'Could not be read; imports with a blank birthday. The family is listed on the Data Completeness report.'],
+        'SEX'        => ['label' => 'Invalid sex',                 'hint' => 'Not Male or Female; imports with no sex. The family is listed on the Data Completeness report.'],
+        'INCOME'     => ['label' => 'Invalid monthly income',      'hint' => 'Not a bracket or readable amount; imports with no income. The family is listed on the Data Completeness report.'],
+        'SERVICE'    => ['label' => 'Unknown service code',        'hint' => 'The code is not on the Reference sheet and is not saved; the row\'s other services import.'],
         'LENGTH'     => ['label' => 'Value too long',              'hint' => 'Shorten it to fit the database limit.'],
         'ADD-MEMBER' => ['label' => 'Will be added to an existing family', 'hint' => 'The QR already belongs to a family. These people are ADDED to it on import - to skip one, delete the row from the file.'],
         'DUP-EXISTS' => ['label' => 'Already in the system',       'hint' => 'Same QR, same head (name + birthday) as a family already on file. SKIPPED on import.'],
         'DUP-DB'     => ['label' => 'Person already in the system','hint' => 'This person is already on file under another family. A HEAD already on file means the whole group is skipped - check the QR.'],
         'DUP-DIFF'   => ['label' => 'Details differ from the system', 'hint' => 'Same family, but the file disagrees with what is stored. The import skips it, so nothing here is saved - edit the record in Manage Family.'],
         'DUP-PERSON' => ['label' => 'Possible duplicate person',   'hint' => 'Same name, birthday and address as another row. Imports anyway - delete a row if it really is a duplicate.'],
-        'BRGY'       => ['label' => 'Barangay not recognised',     'hint' => 'Not an official Biñan barangay. Pick one from the Reference sheet.'],
+        'BRGY'       => ['label' => 'Barangay not recognised',     'hint' => 'Not an official Biñan barangay; imports with no barangay. The family is listed on the Data Completeness report.'],
+        'SECTOR'     => ['label' => 'Sector filed under Other',     'hint' => 'The code is not on the Reference sheet, so it is filed under Other Sectors.'],
         'CONTACT'    => ['label' => 'Contact number format',       'hint' => 'Should start with 09 and be 11 digits. Imports as typed.'],
         'SUFFIX'     => ['label' => 'Suffix adjusted',             'hint' => 'Changed to the matching dropdown value, or left blank if it matches none.'],
-        'BDAY-RANGE' => ['label' => 'Birthday out of range',       'hint' => 'Over 150 years old or in the future. Imports anyway.'],
+        'BDAY-RANGE' => ['label' => 'Birthday out of range',       'hint' => 'Over 150 years ago. Imports as typed.'],
+        'BDAY-FUTURE' => ['label' => 'Future birthday (imports blank)', 'hint' => 'A future date cannot be stored; the birthday imports blank and the family is listed on the Data Completeness report.'],
         'QR-CONTIG'  => ['label' => 'Family rows not together',    'hint' => 'Warning only - the family imports, but check the grouping.'],
     ];
 
@@ -194,7 +197,7 @@ class ImportReviewPresenter
                     'sex'       => (string) ($data['sex'] ?? ''),
                 ],
                 'severity' => $this->worstSeverity($own),
-                'issues'   => $this->issuesFor($own),
+                'issues'   => $this->issuesFor($own, $columns, $sheetRow),
                 'fields'   => $this->fieldsFor($own, $data, $columns, $sheetRow),
             ];
         }
@@ -254,10 +257,11 @@ class ImportReviewPresenter
      * here too - they report what the import will do, so they must be readable
      * even though they offer nothing to edit.
      *
-     * @param list<array> $errors this row's errors
-     * @return list<array{code: string, label: string, severity: string, message: string}>
+     * @param list<array>           $errors  this row's errors
+     * @param array<string, string> $columns [field => Excel column letter]
+     * @return list<array{code: string, label: string, severity: string, message: string, cell: string}>
      */
-    private function issuesFor(array $errors): array
+    private function issuesFor(array $errors, array $columns, int $sheetRow): array
     {
         $byCode = [];
 
@@ -274,11 +278,16 @@ class ImportReviewPresenter
                 continue;
             }
 
+            $field = $error['field'] ?? null;
+
             $byCode[$code] = [
                 'code'     => $code,
                 'label'    => self::GROUPS[$code]['label'] ?? $code,
                 'severity' => $severity,
                 'message'  => (string) ($error['message'] ?? ''),
+                'cell'     => ($field !== null && isset($columns[(string) $field]))
+                    ? (string) $columns[(string) $field] . $sheetRow
+                    : '',
             ];
         }
 

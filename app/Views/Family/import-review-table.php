@@ -43,6 +43,7 @@ $summary = $summary ?? [];
                 <th scope="col"><span class="visually-hidden">Status</span></th>
                 <th scope="col">Family</th>
                 <th scope="col">Role</th>
+                <th scope="col">Row</th>
                 <th scope="col">Last Name</th>
                 <th scope="col">First Name</th>
                 <th scope="col">Issues</th>

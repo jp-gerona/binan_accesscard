@@ -282,6 +282,46 @@ final class ImportReviewPresenterTest extends CIUnitTestCase
         $this->assertNotContains('QR-11', array_column($summary['codes'], 'code'));
     }
 
+    public function testIssuesCarryTheirExcelCellReference(): void
+    {
+        $result = [
+            'rows' => [['sheetRow' => 42, 'data' => [
+                'familyno' => '6001', 'relationship' => 'Head',
+                'firstname' => 'Juan', 'lastname' => 'Cruz', 'monthlyincome' => '',
+            ]]],
+            'errors' => [[
+                'sheetRow' => 42, 'familyNo' => '6001', 'field' => 'monthlyincome',
+                'code' => 'INCOMPLETE', 'message' => 'Monthly Income is blank - imports with no monthly income.',
+                'severity' => 'warning',
+            ]],
+            'columns' => ['monthlyincome' => 'N'],
+        ];
+
+        $page = $this->page($result);
+        $issue = $page['rows'][0]['issues'][0];
+
+        $this->assertSame('INCOMPLETE', $issue['code']);
+        $this->assertSame('N42', $issue['cell']);
+    }
+
+    public function testNewCodesHaveLabels(): void
+    {
+        // codesPresent() falls back to the raw code when GROUPS has no entry, which
+        // renders as "INCOMPLETE" in the filter; every code the importer can now
+        // emit needs a label.
+        $result = ['rows' => [], 'errors' => [
+            ['sheetRow' => 1, 'familyNo' => '6001', 'field' => 'birthday', 'code' => 'BDAY-FUTURE', 'message' => 'x', 'severity' => 'warning'],
+            ['sheetRow' => 1, 'familyNo' => '6001', 'field' => 'birthday', 'code' => 'INCOMPLETE', 'message' => 'x', 'severity' => 'warning'],
+            ['sheetRow' => 1, 'familyNo' => '6001', 'field' => 'sector', 'code' => 'SECTOR', 'message' => 'x', 'severity' => 'warning'],
+        ]];
+
+        $codes = array_column((new ImportReviewPresenter())->build($result)['codes'], 'label', 'code');
+
+        $this->assertSame('Future birthday (imports blank)', $codes['BDAY-FUTURE']);
+        $this->assertSame('Missing value (imports blank)', $codes['INCOMPLETE']);
+        $this->assertSame('Sector filed under Other', $codes['SECTOR']);
+    }
+
     public function testRowFetchesOneShapedRowBySheetRow(): void
     {
         $result = [

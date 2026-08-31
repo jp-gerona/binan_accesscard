@@ -211,7 +211,7 @@
         if (!rows.length) {
             var empty = el('tr');
             var cell = el('td', 'text-center text-muted py-4', 'No people match this filter.');
-            cell.colSpan = 7;
+            cell.colSpan = 8;
             empty.appendChild(cell);
             tbody.appendChild(empty);
         }
@@ -239,6 +239,7 @@
         tr.appendChild(statusCell(row.severity));
         tr.appendChild(el('td', null, row.family || ''));
         tr.appendChild(el('td', null, row.role || ''));
+        tr.appendChild(el('td', 'font-monospace text-nowrap', String(row.sheetRow)));
         tr.appendChild(el('td', null, (row.values || {}).lastname || ''));
         tr.appendChild(el('td', null, (row.values || {}).firstname || ''));
         tr.appendChild(issuesCell(row.issues || []));
@@ -273,7 +274,7 @@
         issues.forEach(function (issue) {
             var badge = el('span',
                 'badge ' + (issue.severity === 'blocking' ? 'text-bg-danger' : 'text-bg-warning'),
-                issue.label);
+                (issue.cell ? issue.cell + ' · ' : '') + issue.label);
             badge.title = issue.message || '';
             list.appendChild(badge);
         });
@@ -309,7 +310,7 @@
         tr.dataset.panelFor = row.sheetRow;
 
         var td = el('td', 'bg-body-tertiary');
-        td.colSpan = 7;
+        td.colSpan = 8;
 
         var wrap = el('div', 'p-3');
         var grid = el('div', 'row g-2');
