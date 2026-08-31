@@ -433,7 +433,7 @@ class DashboardPageBuilder
     {
         $rows      = (new MemberModel())->completenessRows();
         $qrByHead  = (new QrControlModel())->controlsForHeads(array_column($rows['heads'], 'memberID'));
-        $barangays = array_column((new \App\Models\Lookups\BarangayModel())->findAll(), 'name', 'barangayID');
+        $barangays = (new \App\Models\Lookups\BarangayModel())->nameMap();
 
         $membersByHead = [];
 

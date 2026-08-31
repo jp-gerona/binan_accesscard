@@ -35,6 +35,13 @@ final class DataCompletenessPageTest extends CIUnitTestCase
         $db = db_connect();
 
         $db->table('barangay')->insert(['barangayID' => 1, 'name' => 'SANTO TOMAS']);
+        // A soft-deleted barangay must not label a family: nameMap() filters
+        // dt_deleted out, so a head pointing at it gets a blank barangay label.
+        $db->table('barangay')->insert([
+            'barangayID' => 2,
+            'name'       => 'ARCHIVED VILLAGE',
+            'dt_deleted' => '2026-01-01 00:00:00',
+        ]);
         ReferentialFixture::heads($db, [1, 2, 3]);
 
         $complete = [
@@ -49,7 +56,8 @@ final class DataCompletenessPageTest extends CIUnitTestCase
         ];
 
         $db->table('member')->update($complete, ['memberID' => 1]);
-        $db->table('member')->update(array_merge($complete, ['salary' => null]), ['memberID' => 2]);
+        // Head 2 lives in the archived barangay, so its family must label ''.
+        $db->table('member')->update(array_merge($complete, ['salary' => null, 'barangayID' => 2]), ['memberID' => 2]);
         $db->table('member')->update($complete, ['memberID' => 3]);
 
         // Head 2's only member is complete, so the family's member list stays empty.
@@ -100,7 +108,11 @@ final class DataCompletenessPageTest extends CIUnitTestCase
         $this->assertSame(6002, $data['families'][0]['qr']);
         $this->assertSame(['Monthly Income'], $data['families'][0]['headGaps']);
         $this->assertSame([], $data['families'][0]['members']);
+        // The archived barangay's name must not leak into the shaped label.
+        $this->assertSame('', $data['families'][0]['barangay']);
         $this->assertSame('Education', $data['families'][1]['members'][0]['gaps'][0]);
+        // A live barangay still labels its family as before.
+        $this->assertSame('SANTO TOMAS', $data['families'][1]['barangay']);
     }
 
     /**
