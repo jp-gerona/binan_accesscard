@@ -496,6 +496,20 @@ final class FamilyExcelImporterTest extends CIUnitTestCase
         $this->assertNotContains('DUP-PERSON', $this->codes($notDup));
     }
 
+    public function testDuplicatePersonMatchesAcrossBirthdayFormats(): void
+    {
+        // The same child typed twice, once with a slash date and once zero-padded:
+        // one person, so DUP-PERSON must fire. The key uses the parsed date, not
+        // the raw cell text.
+        $result = $this->importer()->validateAndBuild([
+            $this->headRow(3, '6001'),
+            $this->memberRow(4, '6001', ['firstname' => 'Jose', 'lastname' => 'Dela Cruz', 'birthday' => '1/10/2012']),
+            $this->memberRow(5, '6001', ['firstname' => 'Jose', 'lastname' => 'Dela Cruz', 'birthday' => '01-10-2012']),
+        ]);
+
+        $this->assertContains('DUP-PERSON', $this->codes($result));
+    }
+
     // -- head-less family: use the address to find the likely Head --------------
 
     public function testHeadlessFamilyPointsAtTheRowCarryingTheAddress(): void

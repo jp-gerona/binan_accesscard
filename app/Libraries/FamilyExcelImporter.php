@@ -1591,7 +1591,7 @@ class FamilyExcelImporter
                     $this->normalizeText((string) ($data['middlename'] ?? '')),
                     $last,
                     $this->normalizeText(str_replace('.', '', (string) ($data['suffix'] ?? ''))),
-                    trim((string) ($data['birthday'] ?? '')),
+                    (string) $this->normalizeBirthday((string) ($data['birthday'] ?? '')),
                     $addressKey,
                 ]);
 
