@@ -330,6 +330,40 @@ final class FamilyExcelImporterTest extends CIUnitTestCase
         $this->assertNull($result['families'][0]['headPayload']['salary']);
     }
 
+    public function testIncomeAmountsParseAcrossCurrencyMarkersAndSeparators(): void
+    {
+        // The variants measured in the real Cluster1 file. A bracket label still
+        // wins (matched first, case-insensitively); these are the free-text amounts.
+        $amounts = [
+            'P3000' => '3000', 'P5,000' => '5000', 'PHP15,000' => '15000',
+            'Php 15,000' => '15000', '₱5,000' => '5000', '$1, 500' => '1500',
+            '10, 000' => '10000', '3000' => '3000', '14,000' => '14000',
+        ];
+
+        foreach ($amounts as $typed => $stored) {
+            $result = $this->importer()->validateAndBuild([
+                $this->headRow(3, '6001', ['monthlyincome' => $typed]),
+            ]);
+
+            $this->assertSame(0, $result['counts']['blocking'], "'{$typed}' must not block");
+            $this->assertNotContains('INCOME', $this->codes($result), "'{$typed}' must parse");
+            $this->assertSame($stored, (string) $result['families'][0]['headPayload']['salary'],
+                "'{$typed}' should store {$stored}");
+        }
+    }
+
+    public function testIncomeGibberishStillWarns(): void
+    {
+        foreach (['6K', 'SSS Pension - 14, 0000', 'Allotment 30, 000', 'below PHP 8,0003428'] as $typed) {
+            $result = $this->importer()->validateAndBuild([
+                $this->headRow(3, '6001', ['monthlyincome' => $typed]),
+            ]);
+
+            $this->assertContains('INCOME', $this->codes($result), "'{$typed}' should warn");
+            $this->assertSame(0, $result['counts']['blocking']);
+        }
+    }
+
     public function testUnparseableBirthdayWarnsAndImportsBlank(): void
     {
         $result = $this->importer()->validateAndBuild([

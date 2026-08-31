@@ -1192,9 +1192,12 @@ class FamilyExcelImporter
             return $incomeByLabel[$key];
         }
 
-        $numeric = str_replace(',', '', $value);
+        // Free-text amounts: strip a currency marker ("P3000", "PHP 15,000", "$1, 500"),
+        // then commas and stray spaces, and accept what is left as a plain amount.
+        $numeric = preg_replace('/^(?:php|p|₱|\$)\s*/ui', '', $value) ?? $value;
+        $numeric = str_replace([',', "\u{00A0}", ' '], '', $numeric);
 
-        if (is_numeric($numeric)) {
+        if ($numeric !== '' && is_numeric($numeric)) {
             return $numeric;
         }
 
