@@ -792,6 +792,67 @@ final class FamilyExcelImporterTest extends CIUnitTestCase
         $this->assertSame(1, $result['counts']['rows']);
     }
 
+    // -- service aliasing + token splitting / sector fallback (Task 5) ---------
+
+    public function testServiceTyposAndSpacingResolveToRealCodes(): void
+    {
+        // "EDA 8" is one code with an inner space; "B2 B3" and "EDA1 EDA8" are two
+        // codes separated by a space (the missing-comma variants in the real file).
+        $cases = [
+            'ED8A' => [80], 'EDAI' => [80], 'SCI' => [10], 'EDA 8' => [80],
+            'B2 B3' => [20, 21], 'EDA1 EDA8' => [81, 80], 'B2,B3' => [20, 21],
+        ];
+
+        foreach ($cases as $typed => $expectedIds) {
+            $result = $this->importerWithLookups()->validateAndBuild([
+                $this->headRow(3, '6001', ['services' => $typed]),
+            ]);
+
+            $this->assertNotContains('SERVICE', $this->codes($result), "'{$typed}' must resolve");
+            $this->assertSame($expectedIds, $result['families'][0]['headServiceIds'],
+                "'{$typed}' should resolve to " . implode(',', $expectedIds));
+        }
+    }
+
+    public function testUnknownServiceTokenWarnsAndIsSkipped(): void
+    {
+        $result = $this->importerWithLookups()->validateAndBuild([
+            $this->headRow(3, '6001', ['services' => 'EDA8, XX9']),
+        ]);
+
+        $this->assertSame(0, $result['counts']['blocking']);
+        $service = $this->errorsFor($result, 'SERVICE');
+        $this->assertCount(1, $service);
+        $this->assertSame('warning', $service[0]['severity']);
+        $this->assertStringContainsString('XX9', $service[0]['message']);
+        // The known token still imports.
+        $this->assertSame([80], $result['families'][0]['headServiceIds']);
+    }
+
+    public function testUnrecognizedSectorFallsBackToOtherWithAWarning(): void
+    {
+        $result = $this->importerWithLookups()->validateAndBuild([
+            $this->headRow(3, '6001', ['sector' => 'ZZ9']),
+        ]);
+
+        $sector = $this->errorsFor($result, 'SECTOR');
+        $this->assertCount(1, $sector);
+        $this->assertSame('warning', $sector[0]['severity']);
+        $this->assertStringContainsString('ZZ9', $sector[0]['message']);
+        $this->assertStringContainsString('Other', $sector[0]['message']);
+        $this->assertSame([9], $result['families'][0]['headPayload']['sector_ids']);
+    }
+
+    public function testDeliberatelyTypedOtherSectorStaysSilent(): void
+    {
+        $result = $this->importerWithLookups()->validateAndBuild([
+            $this->headRow(3, '6001', ['sector' => 'OTHER']),
+        ]);
+
+        $this->assertNotContains('SECTOR', $this->codes($result));
+        $this->assertSame([9], $result['families'][0]['headPayload']['sector_ids']);
+    }
+
     // -- helpers ---------------------------------------------------------------
 
     /** Importer with lookup caches primed empty so validateAndBuild needs no DB. */
@@ -818,6 +879,24 @@ final class FamilyExcelImporterTest extends CIUnitTestCase
                 'santo nino', 'soro soro', 'timbao', 'tubigan', 'zapote'],
             true
         ));
+
+        return $importer;
+    }
+
+    /** Importer with the real-shaped sector/service lookup maps, so service
+     * alias/spacing resolution and the sector fallback have codes to hit. */
+    private function importerWithLookups(): FamilyExcelImporter
+    {
+        $importer  = $this->importer();
+        $reflection = new ReflectionClass($importer);
+
+        $services = $reflection->getProperty('serviceByCode');
+        $services->setAccessible(true);
+        $services->setValue($importer, ['EDA8' => 80, 'EDA1' => 81, 'B2' => 20, 'B3' => 21, 'SC1' => 10]);
+
+        $sectors = $reflection->getProperty('sectorByCode');
+        $sectors->setAccessible(true);
+        $sectors->setValue($importer, ['SC' => 1, 'OTHER' => 9, 'OTHERS' => 9]);
 
         return $importer;
     }

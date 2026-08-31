@@ -57,6 +57,16 @@ class FamilyExcelImporter
         'v' => 'V', '5' => 'V', '5th' => 'V', 'fifth' => 'V',
     ];
 
+    /**
+     * Curated typo variants measured in real files -> the canonical code. Anything
+     * not here is resolved by spacing/case normalisation or skipped with a warning.
+     */
+    private const SERVICE_ALIASES = [
+        'ED8A' => 'EDA8',
+        'EDAI' => 'EDA8',
+        'SCI'  => 'SC1',
+    ];
+
     /** @var list<array{familyNo: string, headName: string, headPayload: array, headServiceIds: int[], memberPayloads: list<array{payload: array, serviceIds: int[]}>}> */
     private array $families = [];
 
@@ -1233,7 +1243,8 @@ class FamilyExcelImporter
 
     /**
      * Maps a row's comma-separated sector codes to IDs. An unrecognized code is filed
-     * under the "Other Sectors" catch-all rather than aborting (mirrors the form).
+     * under the Other Sectors catch-all with a warning rather than aborting, mirroring
+     * the form. A deliberately typed OTHER/OTHERS is a real pick and stays silent.
      *
      * @param array{row: int, data: array<string, string>} $entry
      * @param array<string, int> $sectorByCode
@@ -1253,6 +1264,8 @@ class FamilyExcelImporter
             }
 
             if ($otherId !== null) {
+                $this->addError((int) $entry['row'], $familyNo, 'SECTOR', 'sector',
+                    'Sector "' . $token . '" is not on the Reference sheet - filed under Other Sectors.', 'warning');
                 $ids[] = $otherId;
             }
         }
@@ -1261,8 +1274,10 @@ class FamilyExcelImporter
     }
 
     /**
-     * Maps a row's comma-separated service codes to IDs, recording an error for any
-     * unknown code.
+     * Maps a row's comma-separated service codes to IDs. A token that resolves to
+     * no code is skipped with a warning (the row's other services still import),
+     * because services are a junction table, not a column: an unknown code cannot
+     * be stored, but it must not cost the person their row.
      *
      * @param array{row: int, data: array<string, string>} $entry
      * @param array<string, int> $serviceByCode
@@ -1273,17 +1288,51 @@ class FamilyExcelImporter
         $ids = [];
 
         foreach ($this->splitList((string) ($entry['data']['services'] ?? '')) as $token) {
-            $code = strtoupper($token);
-
-            if (isset($serviceByCode[$code])) {
+            foreach ($this->serviceTokens((int) $entry['row'], $familyNo, $token, $serviceByCode) as $code) {
                 $ids[] = $serviceByCode[$code];
-                continue;
             }
-
-            $this->addError($entry['row'], $familyNo, 'SERVICE', 'services', 'Unknown service code "' . $token . '" (see the Reference sheet).');
         }
 
         return array_values(array_unique($ids));
+    }
+
+    /**
+     * Resolves ONE cell token to zero or more service codes. The whole token is
+     * tried first with its spaces removed ("EDA 8" -> EDA8), because a code with
+     * an inner space is one code; only then is it split on whitespace ("B2 B3" ->
+     * B2, B3), because two codes separated by a space are two.
+     *
+     * @param array<string, int> $serviceByCode
+     * @return list<string>
+     */
+    private function serviceTokens(int $row, string $familyNo, string $token, array $serviceByCode): array
+    {
+        $whole = strtoupper(str_replace(' ', '', $token));
+        $whole = self::SERVICE_ALIASES[$whole] ?? $whole;
+
+        if (isset($serviceByCode[$whole])) {
+            return [$whole];
+        }
+
+        $codes = [];
+
+        foreach (preg_split('/\s+/', trim($token)) ?: [] as $part) {
+            $code = strtoupper($part);
+            $code = self::SERVICE_ALIASES[$code] ?? $code;
+
+            if (isset($serviceByCode[$code])) {
+                $codes[] = $code;
+            }
+        }
+
+        if ($codes !== []) {
+            return $codes;
+        }
+
+        $this->addError($row, $familyNo, 'SERVICE', 'services',
+            'Service code "' . $token . '" is not on the Reference sheet - it is not saved.', 'warning');
+
+        return [];
     }
 
     /**
