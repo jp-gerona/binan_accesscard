@@ -48,7 +48,7 @@ class DataCompletenessExport
                 $values = [
                     (string) ($family['qr'] ?? ''),
                     $family['head'],
-                    $family['barangay'],
+                    $marks['Barangay'] ?? $family['barangay'],
                     $person['name'],
                     $person['relationship'],
                     $marks['Birthday'] ?? '',
