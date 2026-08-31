@@ -9,7 +9,7 @@ description: Use when changing the database schema, cutting a new SQL dump versi
 CSWD deployment. It is restored from a dump, patched in place, and dumped again.
 Code follows the dump.
 
-The current dump is `accesscardV22.sql` at the repository root.
+The current dump is `accesscardV23.sql` at the repository root.
 `docs/02-database.md` describes the schema itself.
 
 ## The immediate consequence
@@ -20,7 +20,7 @@ test path may not either. When you hit "Unknown column" or an enum rejection,
 check the dump before you check anything else:
 
 ```bash
-sed -n "/^CREATE TABLE \`member\`/,/^) ENGINE/p" accesscardV22.sql
+sed -n "/^CREATE TABLE \`member\`/,/^) ENGINE/p" accesscardV23.sql
 ```
 
 Enum values are case-sensitive in practice. `sex` is `MALE` and `FEMALE`, not
@@ -75,7 +75,7 @@ cards.
 
 ```bash
 mysql -uroot -e "DROP DATABASE IF EXISTS accesscard; CREATE DATABASE accesscard"
-mysql -uroot accesscard < accesscardV22.sql
+mysql -uroot accesscard < accesscardV23.sql
 ```
 
 Then import families through the interface with an Excel file, which is also the
@@ -96,6 +96,7 @@ creates a table or a column. Do not run it against real records.
 | V20 | batch eligibility roster, `member.barangayID` |
 | V21 | batch schedule columns, so batches open and close themselves |
 | V22 | `member_sectors` junction, services grouped by key, address and barangay split, uppercase storage completed, `card_generated_at` |
+| V23 | `IW` (Informal Worker) sector row, the Cluster1 survey's most-used code |
 
 ## Seeds
 

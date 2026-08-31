@@ -39,7 +39,7 @@ distribution venue.
 composer install
 cp env .env                                    # then set app.baseURL and the DB block
 mysql -uroot -e "CREATE DATABASE accesscard"
-mysql -uroot accesscard < accesscardV22.sql
+mysql -uroot accesscard < accesscardV23.sql
 PHP_CLI_SERVER_WORKERS=8 php spark serve --port 8090
 ```
 
@@ -58,7 +58,7 @@ binary often is not. Both are covered in
 ## There are no migrations
 
 The database schema lives in the SQL dump at the repository root
-(`accesscardV22.sql`), and that file is the source of truth. Schema changes are
+(`accesscardV23.sql`), and that file is the source of truth. Schema changes are
 written as patch files under `sql/patches/` and folded into a new dump.
 
 This surprises people who know CodeIgniter, so it is worth stating up front: a

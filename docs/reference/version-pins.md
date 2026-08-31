@@ -14,7 +14,7 @@ chapters and update this file.
 | Bootstrap, JavaScript | v5.3.3 | `public/assets/bootstrap/js/bootstrap.bundle.min.js` (header) |
 | UI theme | SB Admin 1 (`startbootstrap-sb-admin` v7.0.7) | `public/assets/sb-admin/css/styles.css` (header) |
 | FullCalendar | 6.1.15 | `public/assets/fullcalendar/index.global.min.js` |
-| Current SQL dump | V22 | `accesscardV22.sql` |
+| Current SQL dump | V23 | `accesscardV23.sql` |
 
 ## The Bootstrap version is not one number
 

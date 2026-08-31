@@ -37,7 +37,7 @@ chapter 02 if you want to know why.
 
 ```bash
 mysql -uroot -e "CREATE DATABASE IF NOT EXISTS accesscard"
-mysql -uroot accesscard < accesscardV22.sql
+mysql -uroot accesscard < accesscardV23.sql
 ```
 
 The dump carries the schema and the reference seed rows: barangays, sectors,
