@@ -93,6 +93,10 @@ class FamilyExcelImporter
      */
     private array $existingPeople = [];
 
+    /** [sheet row => family QR] for every grouped row, so contiguity can tell a
+     * blank gap (no owner) from another family's rows sitting in between. */
+    private array $rowOwner = [];
+
     private int $memberCount = 0;
 
     /**
@@ -232,6 +236,7 @@ class FamilyExcelImporter
         $this->appends        = [];
         $this->existingHeads  = $existingHeads;
         $this->existingPeople = $existingPeople;
+        $this->rowOwner       = [];
         $this->memberCount    = 0;
         $this->rowCount       = 0;
         $this->groupCount     = 0;
@@ -267,6 +272,14 @@ class FamilyExcelImporter
         }
 
         $this->groupCount = count($groups);
+
+        // The owner map must be complete before ANY family is processed: the first
+        // family's contiguity check has to see families that come later in the loop.
+        foreach ($groups as $familyNo => $familyRows) {
+            foreach ($familyRows as $familyRow) {
+                $this->rowOwner[(int) $familyRow['row']] = (int) $familyNo;
+            }
+        }
 
         foreach ($groups as $familyNo => $familyRows) {
             $this->processFamily((string) $familyNo, $familyRows, $sectorByCode, $serviceByCode, $incomeByLabel);
@@ -941,8 +954,9 @@ class FamilyExcelImporter
     }
 
     /**
-     * QR-30: a family's rows should sit next to each other. Non-contiguous rows are a
-     * warning (a sort/paste accident) - informational, does not block the import.
+     * QR-30: a family's rows should sit next to each other. Judged against populated rows
+     * only (see rowOwner): blank rows and empty gaps are not a break, only another
+     * family's rows interleaved between them are. Warning only - the family still imports.
      *
      * @param list<array{row: int, data: array<string, string>}> $rows
      */
@@ -953,10 +967,21 @@ class FamilyExcelImporter
         }
 
         $nums = array_map(static fn (array $entry): int => (int) $entry['row'], $rows);
+        $min  = min($nums);
+        $max  = max($nums);
 
-        if (max($nums) - min($nums) + 1 !== count($nums)) {
-            $this->addError(min($nums), $familyNo, 'QR-CONTIG', null,
-                'Family ' . $familyNo . ' rows are not next to each other. This can happen after sorting or pasting - check the grouping.', 'warning');
+        // Only a row belonging to a DIFFERENT family sitting between this family's
+        // rows is a break. Blank rows inside the span were skipped at read time and
+        // carry no owner, and a gap with nothing in it at all is not interleaving.
+        for ($row = $min + 1; $row < $max; $row++) {
+            $owner = $this->rowOwner[$row] ?? null;
+
+            if ($owner !== null && $owner !== (int) $familyNo) {
+                $this->addError($min, $familyNo, 'QR-CONTIG', null,
+                    'Family ' . $familyNo . ' rows are not next to each other. This can happen after sorting or pasting - check the grouping.', 'warning');
+
+                return;
+            }
         }
     }
 

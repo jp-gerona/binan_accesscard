@@ -214,11 +214,25 @@ final class FamilyExcelImporterTest extends CIUnitTestCase
         $this->assertContains('REQUIRED', $codes);
     }
 
-    public function testNonContiguousFamilyIsAWarningNotBlocking(): void
+    public function testBlankGapBetweenFamilyRowsIsNotAFlag(): void
+    {
+        // Rows 3 and 5 with nothing at row 4: the blank row was skipped at read
+        // time, so the family IS together as far as the file is concerned. The old
+        // raw row-number span flagged exactly this, 1,503 times on the real file.
+        $result = $this->importer()->validateAndBuild([
+            $this->headRow(3, '6001'),
+            $this->memberRow(5, '6001'),
+        ]);
+
+        $this->assertNotContains('QR-CONTIG', $this->codes($result));
+    }
+
+    public function testAnotherFamilyInterleavedStillWarns(): void
     {
         $result = $this->importer()->validateAndBuild([
             $this->headRow(3, '6001'),
-            $this->memberRow(5, '6001'), // gap at row 4
+            $this->headRow(4, '6002'),
+            $this->memberRow(5, '6001'),
         ]);
 
         $contig = array_values(array_filter(
@@ -228,6 +242,7 @@ final class FamilyExcelImporterTest extends CIUnitTestCase
 
         $this->assertCount(1, $contig);
         $this->assertSame('warning', $contig[0]['severity']);
+        $this->assertSame('6001', (string) $contig[0]['familyNo']);
     }
 
     // -- barangay / contact / suffix / duplicate-person (warnings) -----------
