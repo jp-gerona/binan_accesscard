@@ -58,6 +58,7 @@ $routes->group('records', ['filter' => 'roleNav:records-import'], static functio
 
 $routes->group('records', ['filter' => 'roleNav:records-completeness'], static function (RouteCollection $routes): void {
     $routes->get('completeness', 'Admin\DashboardController::dataCompleteness');
+    $routes->get('completeness/download', 'Admin\DashboardController::completenessDownload');
 });
 
 /*

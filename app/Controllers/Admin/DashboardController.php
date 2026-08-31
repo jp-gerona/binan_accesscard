@@ -73,6 +73,12 @@ class DashboardController extends BaseController
         return (new DashboardPageBuilder($this->request))->renderPage('records-completeness');
     }
 
+    /** GET `records/completeness/download`. The queue as a filter-honouring .xlsx file. */
+    public function completenessDownload(): \CodeIgniter\HTTP\ResponseInterface
+    {
+        return (new DashboardPageBuilder($this->request))->completenessDownloadResponse();
+    }
+
     /**
      * GET `audit-trails`. Renders the audit log page, or the audit fragment
      * for AJAX search/filtering.

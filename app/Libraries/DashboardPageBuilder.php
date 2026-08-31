@@ -543,6 +543,26 @@ class DashboardPageBuilder
         ];
     }
 
+    /**
+     * The completeness queue as an .xlsx download, honouring the page's filters.
+     * Read-only: no mutation, therefore no audit row.
+     */
+    public function completenessDownloadResponse(): \CodeIgniter\HTTP\ResponseInterface
+    {
+        $data        = $this->buildCompletenessViewData();
+        $spreadsheet = DataCompletenessExport::build($data['allFamilies']);
+
+        $response = service('response');
+        $response->setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        $response->setHeader('Content-Disposition', 'attachment; filename="data-completeness-' . date('Y-m-d') . '.xlsx"');
+
+        ob_start();
+        (new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet))->save('php://output');
+        $response->setBody((string) ob_get_clean());
+
+        return $response;
+    }
+
     /** @param array<string, string|null> $row @param array<string, string> $labels @return list<string> */
     private static function blankLabels(array $row, array $labels): array
     {
