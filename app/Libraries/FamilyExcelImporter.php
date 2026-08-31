@@ -969,30 +969,38 @@ class FamilyExcelImporter
         $this->requireField($row, $familyNo, 'firstname', 'First Name', $firstName);
         $this->requireField($row, $familyNo, 'lastname', 'Last Name', $lastName);
 
-        // Personal-profile fields are required for EVERY person (head and member), mirroring
-        // the Add/Edit family form. Only the head carries Address/Barangay - members inherit
-        // the head's, so those stay head-only.
-        $birthday = $this->validateBirthday($row, $familyNo, (string) ($data['birthday'] ?? ''), true);
-        $sex      = $this->validateSex($row, $familyNo, (string) ($data['sex'] ?? ''), true);
+        $birthday = $this->validateBirthday($row, $familyNo, (string) ($data['birthday'] ?? ''));
+        $sex      = $this->validateSex($row, $familyNo, (string) ($data['sex'] ?? ''));
 
         $civilStatus = $this->fullValueFromCode((string) ($data['civilstatus'] ?? ''), FamilyExcelTemplate::CIVIL_STATUS_CODES);
         $education   = $this->fullValueFromCode((string) ($data['education'] ?? ''), FamilyExcelTemplate::EDUCATION_CODES);
 
-        $this->requireField($row, $familyNo, 'civilstatus', 'Civil Status', $civilStatus);
-        $this->requireField($row, $familyNo, 'education', 'Education', $education);
-        $this->requireField($row, $familyNo, 'job', 'Job', (string) ($data['job'] ?? ''));
-
-        if ($isHead) {
-            $this->requireField($row, $familyNo, 'address', 'Address', (string) ($data['address'] ?? ''));
-            $this->requireField($row, $familyNo, 'barangay', 'Barangay', (string) ($data['barangay'] ?? ''));
-            // Barangay has no "Other" option - it must be one of the official barangays
-            // (tolerant match). A mismatch blocks the row: there is nowhere to store it.
-            $this->validateBarangay($row, $familyNo, (string) ($data['barangay'] ?? ''));
-        } else {
-            $this->requireField($row, $familyNo, 'relationship', 'Relationship', (string) ($data['relationship'] ?? ''));
+        if (trim($civilStatus) === '') {
+            $this->incompleteField($row, $familyNo, 'civilstatus', 'Civil Status');
+        }
+        if (trim($education) === '') {
+            $this->incompleteField($row, $familyNo, 'education', 'Education');
+        }
+        if (trim((string) ($data['job'] ?? '')) === '') {
+            $this->incompleteField($row, $familyNo, 'job', 'Job');
         }
 
-        $income    = $this->resolveIncome($row, $familyNo, (string) ($data['monthlyincome'] ?? ''), true, $incomeByLabel);
+        if ($isHead) {
+            if (trim((string) ($data['address'] ?? '')) === '') {
+                $this->incompleteField($row, $familyNo, 'address', 'Address');
+            }
+            if (trim((string) ($data['barangay'] ?? '')) === '') {
+                $this->incompleteField($row, $familyNo, 'barangay', 'Barangay');
+            }
+            // Barangay has no "Other" option, so a value that is not an official
+            // barangay resolves to no barangayID (see validateBarangay's warning).
+            $this->validateBarangay($row, $familyNo, (string) ($data['barangay'] ?? ''));
+        } elseif (trim((string) ($data['relationship'] ?? '')) === '') {
+            $this->addError($row, $familyNo, 'INCOMPLETE', 'relationship',
+                'Relationship is blank - this row imports as a Member.', 'warning');
+        }
+
+        $income = $this->resolveIncome($row, $familyNo, (string) ($data['monthlyincome'] ?? ''), $incomeByLabel);
         $sectorIds = $this->mapSectors($entry, $familyNo, $sectorByCode);
 
         // Contact number (optional): warn if present and not 09 + 11 digits.
@@ -1059,17 +1067,28 @@ class FamilyExcelImporter
     }
 
     /**
-     * Validates a birthday cell (MM-DD-YYYY, legacy YYYY-MM-DD accepted). Required for
-     * heads. Returns the stored Y-m-d value or null.
+     * Records the warning for a blank field that imports as NULL: the row is saved,
+     * and the family is listed on the Data Completeness report until the data is
+     * collected. Blank never blocks, because the member table permits NULL on
+     * every field this covers; only identity (names, QR) and family structure do.
      */
-    private function validateBirthday(int $row, string $familyNo, string $value, bool $required): ?string
+    private function incompleteField(int $row, string $familyNo, string $field, string $label): void
+    {
+        $this->addError($row, $familyNo, 'INCOMPLETE', $field,
+            $label . ' is blank - imports with no ' . strtolower($label)
+            . '. The family is listed on the Data Completeness report.', 'warning');
+    }
+
+    /**
+     * Validates a birthday cell (MM-DD-YYYY, legacy YYYY-MM-DD accepted). Blank imports
+     * as NULL with an INCOMPLETE warning. Returns the stored Y-m-d value or null.
+     */
+    private function validateBirthday(int $row, string $familyNo, string $value): ?string
     {
         $value = trim($value);
 
         if ($value === '') {
-            if ($required) {
-                $this->addError($row, $familyNo, 'BDAY', 'birthday', 'Birthday is required (format MM-DD-YYYY).');
-            }
+            $this->incompleteField($row, $familyNo, 'birthday', 'Birthday');
 
             return null;
         }
@@ -1120,15 +1139,13 @@ class FamilyExcelImporter
         }
     }
 
-    /** Validates a sex cell against Male/Female. Required for heads. */
-    private function validateSex(int $row, string $familyNo, string $value, bool $required): ?string
+    /** Validates a sex cell against Male/Female. Blank imports as NULL with an INCOMPLETE warning. */
+    private function validateSex(int $row, string $familyNo, string $value): ?string
     {
         $value = trim($value);
 
         if ($value === '') {
-            if ($required) {
-                $this->addError($row, $familyNo, 'SEX', 'sex', 'Sex is required (Male or Female).');
-            }
+            $this->incompleteField($row, $familyNo, 'sex', 'Sex');
 
             return null;
         }
@@ -1148,18 +1165,16 @@ class FamilyExcelImporter
 
     /**
      * Resolves a monthly-income cell (a bracket label or a number) to its stored value.
-     * Required for heads.
+     * Blank imports as NULL with an INCOMPLETE warning.
      *
      * @param array<string, string> $incomeByLabel
      */
-    private function resolveIncome(int $row, string $familyNo, string $value, bool $required, array $incomeByLabel): ?string
+    private function resolveIncome(int $row, string $familyNo, string $value, array $incomeByLabel): ?string
     {
         $value = trim($value);
 
         if ($value === '') {
-            if ($required) {
-                $this->addError($row, $familyNo, 'INCOME', 'monthlyincome', 'Monthly income is required.');
-            }
+            $this->incompleteField($row, $familyNo, 'monthlyincome', 'Monthly Income');
 
             return null;
         }
@@ -1737,8 +1752,8 @@ class FamilyExcelImporter
 
     /**
      * Resolves a head's Barangay cell to its barangayID, or null when blank or
-     * unrecognised. Both cases are already blocked by requireField()/validateBarangay(),
-     * so the null here only ever reaches a row the review step refuses to commit.
+     * unrecognised. A blank cell carries an INCOMPLETE warning and an unrecognised one
+     * a BRGY error, so the null matches the row's review verdict.
      */
     private function barangayIdForHead(string $value): ?int
     {

@@ -84,10 +84,11 @@ final class FamilyExcelImporterTest extends CIUnitTestCase
         $this->assertSame(0, $result['counts']['blocking']);
     }
 
-    public function testMembersRequireTheSamePersonalFieldsAsTheHead(): void
+    public function testMemberMissingPersonalFieldsWarnsButStillImports(): void
     {
-        // A member missing the personal fields (birthday, sex, civil status, education, job,
-        // monthly income) is now blocking - the same rule the head has, matching the form.
+        // Blank personal fields import as NULL with an INCOMPLETE warning; only
+        // identity (names, QR) and family structure block. The Data Completeness
+        // report is where the blanks get chased.
         $result = $this->importer()->validateAndBuild([
             $this->headRow(3, '6001'),
             $this->memberRow(4, '6001', [
@@ -96,8 +97,58 @@ final class FamilyExcelImporterTest extends CIUnitTestCase
             ]),
         ]);
 
-        $this->assertSame(6, $result['counts']['blocking']);   // one per missing personal field
-        $this->assertContains('REQUIRED', $this->codes($result));
+        $this->assertSame(0, $result['counts']['blocking']);
+        $this->assertSame(1, $result['counts']['families']);   // still built
+        $incomplete = $this->errorsFor($result, 'INCOMPLETE');
+        $this->assertCount(6, $incomplete);                     // one per blank field
+
+        foreach ($incomplete as $error) {
+            $this->assertSame('warning', $error['severity']);
+            $this->assertStringContainsString('Data Completeness', $error['message']);
+        }
+    }
+
+    public function testHeadBlankAddressAndBarangayWarnButStillImport(): void
+    {
+        $result = $this->importer()->validateAndBuild([
+            $this->headRow(3, '6001', ['address' => '', 'barangay' => '']),
+        ]);
+
+        $this->assertSame(0, $result['counts']['blocking']);
+        $incomplete = $this->errorsFor($result, 'INCOMPLETE');
+        $this->assertCount(2, $incomplete);
+        $this->assertSame('address', $incomplete[0]['field']);
+        $this->assertSame('barangay', $incomplete[1]['field']);
+    }
+
+    public function testBlankRelationshipOnAMemberImportsAsMember(): void
+    {
+        $result = $this->importer()->validateAndBuild([
+            $this->headRow(3, '6001'),
+            $this->memberRow(4, '6001', ['relationship' => '']),
+        ]);
+
+        $this->assertSame(0, $result['counts']['blocking']);
+        $incomplete = $this->errorsFor($result, 'INCOMPLETE');
+        $this->assertCount(1, $incomplete);
+        $this->assertSame('relationship', $incomplete[0]['field']);
+        $this->assertStringContainsString('imports as a Member', $incomplete[0]['message']);
+        // The stored payload keeps the MEMBER default.
+        $this->assertSame('MEMBER', $result['families'][0]['memberPayloads'][0]['payload']['relationship']);
+    }
+
+    public function testBlankNamesRemainBlocking(): void
+    {
+        // Identity fields the database refuses (NOT NULL) stay blocking.
+        $result = $this->importer()->validateAndBuild([
+            $this->headRow(3, '6001'),
+            $this->memberRow(4, '6001', ['firstname' => '']),
+        ]);
+
+        $required = $this->errorsFor($result, 'REQUIRED');
+        $this->assertCount(1, $required);
+        $this->assertSame('blocking', $required[0]['severity']);
+        $this->assertSame(1, $result['counts']['blocking']);
     }
 
     public function testMemberBlankAddressAndBarangayStayAllowed(): void
