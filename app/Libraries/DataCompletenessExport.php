@@ -15,6 +15,8 @@ use PhpOffice\PhpSpreadsheet\Spreadsheet;
 class DataCompletenessExport
 {
     /**
+     * Assemble the .xlsx worksheet from the filtered completeness family list.
+     *
      * @param list<array{qr: ?int, head: string, barangay: string, headGaps: list<string>, members: list<array{name: string, relationship: string, gaps: list<string}>}> $families
      */
     public static function build(array $families): Spreadsheet

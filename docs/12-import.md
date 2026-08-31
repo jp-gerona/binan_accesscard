@@ -13,7 +13,7 @@ transfer; it is a proofreading exercise with a data transfer at the end.
 2. They upload the filled `.xlsx`.
 3. The system reads and checks the file. **Nothing is saved yet.**
 4. The review screen lists every problem it found, naming the exact Excel cell.
-5. The encoder fixes the problems **in the spreadsheet** and uploads again.
+5. The encoder fixes the **blocking** problems **in the spreadsheet** and uploads again. Warnings are shown but do not need to be fixed; they describe what the import will do.
 6. When no blocking issues remain, they press Confirm import.
 
 Step 5 is the part that gets questioned, so it is worth stating the reasoning:
@@ -76,7 +76,9 @@ gone. Either the data is wrong, or the database would physically refuse it.
 **Warning (informational).** Does not stop the import. It says what the import is
 about to do, or points at something that looks like a typo. Some warnings mean
 rows will be **skipped and not saved**, which is why they are worth reading
-rather than clicking past.
+rather than clicking past. A warning that says a field **imports blank** means
+the record is saved with that field empty and the family appears on the Data
+Completeness report until the data is collected.
 
 ## Blocking issues
 
@@ -128,11 +130,7 @@ correct the QR, or give the new family its own unused one.
 
 | Code | Meaning |
 |---|---|
-| `REQUIRED` | A required cell is blank. A head needs civil status, education, job, address, and barangay. Everyone needs QR, relationship, first name, and last name. |
-| `BDAY` | The birthday is not a real date, or is missing on a head. Format is MM-DD-YYYY. |
-| `SEX` | Not Male or Female. |
-| `INCOME` | Not a bracket label from the dropdown, and not a number. |
-| `SERVICE` | A service code that is not on the Reference sheet. |
+| `REQUIRED` | First name or last name is blank. These are the only two fields that block; every other blank imports as NULL with a warning instead. |
 | `LENGTH` | The value would not fit its database column and would be cut off silently. Limits: first and last name 100, middle name 50, civil status 100, contact number 20, religion 100. |
 
 ## Warnings
@@ -172,11 +170,27 @@ instead.
 | Code | Meaning |
 |---|---|
 | `DUP-PERSON` | Two rows in your file look like the same person: same first, middle, last, suffix and birthday, and the same household address. Two real people can share a name, but never a name, a birthday, and an address. Imports anyway, on purpose. |
-| `BRGY` | Not one of the official Biñan barangays. The dropdown has no "Other" option, so anything off-list is suspect. Matching is tolerant of `Sto.` for `Santo`, `n` for `ñ`, and a parenthesised alias. Imports as typed. |
+| `INCOMPLETE` | A completeness field is blank. The row is saved with that field empty and the family appears on the Data Completeness report until the data is collected. Covers birthday, sex, civil status, education, job, monthly income, address, barangay, and relationship. |
+| `BDAY` | The birthday is not a real date. The original text is quoted and the field imports blank; the family appears on the Data Completeness report until a valid date is collected. Format is MM-DD-YYYY. |
+| `BDAY-FUTURE` | The birthday is a real date but in the future. The original text is quoted and the field imports blank; the family appears on the Data Completeness report. |
+| `BDAY-RANGE` | A valid date, but over 150 years ago. 150 is well past the oldest human on record, around 122, so it cannot flag a real person. Imports as typed. |
+| `SEX` | Not Male or Female. The original text is quoted and the field imports blank; the family appears on the Data Completeness report. |
+| `INCOME` | Not a bracket label from the dropdown, and not a number. The original text is quoted and the field imports blank; the family appears on the Data Completeness report. |
+| `BRGY` | Not one of the official Biñan barangays. The dropdown has no "Other" option, so anything off-list is suspect. Matching is tolerant of `Sto.` for `Santo`, `n` for `ñ`, and a parenthesised alias. Imports as typed; a blank barangay is reported as `INCOMPLETE` instead. |
 | `CONTACT` | Does not start with 09, or is not 11 digits. Imports as typed. |
 | `SUFFIX` | The suffix was mapped to the matching dropdown value: "Junior" to `Jr`, "the 3rd" to `III`. If it matches nothing it is left blank. The database accepts only `Jr`, `Sr`, `I`, `II`, `III`, `IV`, `V`. |
-| `BDAY-RANGE` | A valid date, but implausible: in the future, or over 150 years ago. 150 is well past the oldest human on record, around 122, so it cannot flag a real person. Imports anyway. |
-| `QR-CONTIG` | One family's rows are not next to each other in the sheet. Catches a sort or paste that scattered a family. It still imports correctly; this only asks you to check the grouping. |
+| `SECTOR` | A sector code is not on the Reference sheet. The token is filed under Other Sectors instead of blocking. |
+| `SERVICE` | A service code is not on the Reference sheet. The token is skipped; the row's other services still import. |
+| `QR-CONTIG` | One family's rows are not next to each other because another family's rows sit between them. Catches a sort or paste that scattered a family. It still imports correctly; this only asks you to check the grouping. |
+
+## Data Completeness
+
+Blank completeness fields do not block an import, but they do leave work behind.
+The **Data Completeness** page, at `records/completeness`, lists every family
+that still has a blank in any completeness field after the import runs. Staff
+with the `records-completeness` key - Developer, Admin, and Encoder - can filter
+the list by barangay or missing field, open the family form to fill the gap, and
+download the current queue as an `.xlsx` checklist from `records/completeness/download`.
 
 ## When is a repeated QR a problem?
 
