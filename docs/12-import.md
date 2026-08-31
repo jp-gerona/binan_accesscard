@@ -222,9 +222,9 @@ warnings and import fine.
 ## The demo file
 
 `excel/family-import-DEMO-validations.xlsx` trips every validation the importer
-has: 30 rows, 13 family groups, producing 19 issues and 12 warnings. Nothing is
-written unless you confirm, and you cannot confirm while issues remain, so it is
-safe to upload against a real database.
+has: 31 rows, 14 family groups, producing 15 blocking issues and 44 warnings.
+Nothing is written unless you confirm, and you cannot confirm while issues remain,
+so it is safe to upload against a real database.
 
 It is keyed to families that must exist in the database, QR 1 to 5 in the current
 dump, which is what makes the already-in-the-system checks fire. If those families
@@ -236,23 +236,24 @@ are ever removed, regenerate it with `php tools/make-import-demo.php`.
 | 4 | `DUP-EXISTS`, `DUP-DIFF` | QR 4, same head, new phone number. Skipped, so the edit is not saved. |
 | 5 | `QR-TAKEN` | QR 2 belongs to Ronald Andrada; this row is Carmela Reyes. |
 | 6 | `QR-TAKEN` | QR 3, right name, wrong birthday. |
-| 7 | `ADD-MEMBER` | No head, and QR 5 already exists: a forgotten member joining family 5. |
+| 7 | `ADD-MEMBER`, `INCOMPLETE` | No head, and QR 5 already exists: a forgotten member joining family 5. The child's blank civil status, education, job and income also raise `INCOMPLETE`. |
 | 8 | `DUP-DB` | Ronald Andrada re-entered under a brand-new QR. The QR looks fine, but the whole family would be silently skipped. |
 | 10-11 | `HEAD-NONE` | Nobody marked Head; the message names who probably is. |
 | 12-13 | `HEAD-MULTI` | Two Head rows under one QR. |
 | 14-15 | `FP-ADDR` | One QR, two different households. |
-| 16 | `REQUIRED`, `BDAY`, `SEX`, `INCOME`, `SERVICE` | One row with five separate field errors. |
-| 17 | `LENGTH` | A first name past the 100-character limit. |
-| 18 | `QR-01` | Blank QR. |
-| 19 | `QR-FORMAT` | `ABC123`. |
-| 20 | `QR-05` | Zero. |
-| 21 | `QR-07` | `9999999999`, above the ceiling. |
-| 22 | `QR-08` | `#REF!`, an Excel error cell. |
-| 23 | `QR-12` | `=A4`, a formula instead of a number. |
-| 24 | `BRGY`, `CONTACT`, `SUFFIX`, `BDAY-RANGE` | One row with four warnings. |
-| 26-27 | `DUP-PERSON` | The same child typed twice in one family. |
-| 28, 30 | `QR-CONTIG` | Family 9000009's rows split apart by another family's row. |
-| 31-32 | `QR-11`, `QR-01` | Two rows with merged QR cells, so row 32 has no QR of its own. |
+| 16 | `INCOMPLETE`, `BDAY`, `SEX`, `INCOME`, `SERVICE` | One row with five separate field warnings under the relaxed contract: a blank Job now warns as `INCOMPLETE`, and the bad birthday, sex, income and service codes all warn and import blank or skip the bad token. |
+| 17 | `REQUIRED` | A blank last name: the only remaining field-level blocker. |
+| 18 | `LENGTH` | A first name past the 100-character limit. |
+| 19 | `QR-01` | Blank QR. |
+| 20 | `QR-FORMAT` | `ABC123`. |
+| 21 | `QR-05` | Zero. |
+| 22 | `QR-07` | `9999999999`, above the ceiling. |
+| 23 | `QR-08` | `#REF!`, an Excel error cell. |
+| 24 | `QR-12` | `=A4`, a formula instead of a number. |
+| 25 | `BRGY`, `CONTACT`, `SUFFIX`, `BDAY-RANGE` | One row with four warnings. |
+| 27-28 | `DUP-PERSON` | The same child typed twice in one family. |
+| 29, 31 | `QR-CONTIG` | Family 9000009's rows split apart by another family's row. |
+| 32-33 | `QR-11`, `QR-01` | Two rows with merged QR cells, so row 33 has no QR of its own. |
 
 `FILE` and `EMPTY` are not demonstrated: both are whole-file failures and cannot
 coexist with other errors. To see `FILE`, rename a `.txt` to `.xlsx` and upload
