@@ -23,13 +23,14 @@
  * first, THEN ALL-ERRORS. The non-DB codes fire on their own.
  *
  * Expected ALL-ERRORS seed coverage:
- *   blocking: DUP-EXISTS x2, DUP-DIFF x1, ADD-MEMBER x1, DUP-DB x1, QR-TAKEN x1,
- *     HEAD-MULTI x1, FP-ADDR x1, HEAD-NONE x1, REQUIRED x2, LENGTH x1,
- *     QR-01 x1, QR-FORMAT x1, QR-05 x1, QR-07 x1, QR-08 x1, QR-12 x1.
- *   warnings: INCOMPLETE x6, SERVICE x1, BRGY x1, SEX x1, BDAY x1, INCOME x1,
- *     CONTACT x1, SUFFIX x1, BDAY-RANGE x1, SECTOR x1, DUP-PERSON x1,
- *     QR-CONTIG x1, QR-11 x1.
- *   row counts: 100A=100, 100B=100, ALL-ERRORS=40, C=10000, D=10000.
+ *   blocking: QR-TAKEN x1, HEAD-MULTI x1, FP-ADDR x1, HEAD-NONE x1,
+ *     REQUIRED x2, LENGTH x1, QR-01 x1, QR-FORMAT x1, QR-05 x1,
+ *     QR-07 x1, QR-08 x1, QR-12 x1.
+ *   warnings: DUP-EXISTS x2, DUP-DIFF x1, ADD-MEMBER x1, DUP-DB x1,
+ *     INCOMPLETE x6, SERVICE x1, BRGY x1, SEX x1, BDAY x1, BDAY-FUTURE x1,
+ *     INCOME x1, CONTACT x1, SUFFIX x1, BDAY-RANGE x1, SECTOR x1,
+ *     DUP-PERSON x1, QR-CONTIG x1, QR-11 x1.
+ *   row counts: 100A=100, 100B=100, ALL-ERRORS=41, C=10000, D=10000.
  */
 
 use CodeIgniter\Boot;
@@ -290,6 +291,8 @@ function errorRows(): array
         mkRow('9100004', 'Head', 'Lopez', 'Andres', 'Vega', '', '02-02-1980', 'Malee', 'M - Married', '09171230006', 'Roman Catholic', 'HS - High School', 'Factory Worker', 'PHP 8,000 - 13,000', '77 Sampaguita St.', 'Zapote'),
         // BDAY invalid date.
         mkRow('9100005', 'Head', 'Ramos', 'Nilo', 'Cruz', '', '31-31-2000', 'Male', 'S - Single', '09171230007', 'Roman Catholic', 'HS - High School', 'Driver', 'PHP 8,000 - 13,000', '4 Narra St.', 'Malaban'),
+        // BDAY-FUTURE future date (warns, imports blank).
+        mkRow('9100014', 'Head', 'Ramos', 'Iris', 'Lim', '', '01-01-2050', 'Female', 'S - Single', '09171230028', 'Roman Catholic', 'HS - High School', 'Student', 'No regular income', '4 Narra St.', 'Malaban'),
         // INCOME not a bracket/number (warning; currency-prefixed values such as P3000 pass).
         mkRow('9100006', 'Head', 'Flores', 'Rene', 'Lim', '', '03-03-1979', 'Male', 'M - Married', '09171230008', 'Roman Catholic', 'HS - High School', 'Vendor', 'plenty', '9 Ilang St.', 'Ganado'),
         // SERVICE unknown code (typo aliases are accepted, unknown tokens warn and skip).
@@ -312,8 +315,8 @@ function errorRows(): array
 
         // ===== YELLOW: field-level warnings (complete data) =======================
         // Five warnings on one row: BRGY (unofficial), CONTACT (short), SUFFIX
-        // ("Junior" -> "Jr"), BDAY-RANGE (born 1850), and SECTOR (OTHER fallback).
-        mkRow('9100009', 'Head', 'Ocampo', 'Ignacio', 'Reyes', 'Junior', '01-01-1850', 'Male', 'W - Widow / Widower', '12345', 'Roman Catholic', 'E - Elementary', 'Retired', 'Below PHP 8,000', '10 Kalachuchi St.', 'Barangay Wakanda', 'OTHER'),
+        // ("Junior" -> "Jr"), BDAY-RANGE (born 1850), and SECTOR (unrecognized token).
+        mkRow('9100009', 'Head', 'Ocampo', 'Ignacio', 'Reyes', 'Junior', '01-01-1850', 'Male', 'W - Widow / Widower', '12345', 'Roman Catholic', 'E - Elementary', 'Retired', 'Below PHP 8,000', '10 Kalachuchi St.', 'Barangay Wakanda', 'ZZ9'),
 
         // ===== YELLOW: incomplete profile fields ================================
         // Each row has one blank profile field and otherwise valid head data.

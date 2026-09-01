@@ -176,7 +176,7 @@ instead.
 | `BDAY-RANGE` | A valid date, but over 150 years ago. 150 is well past the oldest human on record, around 122, so it cannot flag a real person. Imports as typed. |
 | `SEX` | Not Male or Female. The original text is quoted and the field imports blank; the family appears on the Data Completeness report. |
 | `INCOME` | Not a bracket label from the dropdown, and not a number. The original text is quoted and the field imports blank; the family appears on the Data Completeness report. |
-| `BRGY` | Not one of the official Biñan barangays. The dropdown has no "Other" option, so anything off-list is suspect. Matching is tolerant of `Sto.` for `Santo`, `n` for `ñ`, and a parenthesised alias. Imports as typed; a blank barangay is reported as `INCOMPLETE` instead. |
+| `BRGY` | Not one of the official Biñan barangays. The dropdown has no "Other" option, so anything off-list is suspect. Matching is tolerant of `Sto.` for `Santo`, `n` for `ñ`, and a parenthesised alias. The original text is quoted and the field imports blank; the family appears on the Data Completeness report until an official barangay is collected. |
 | `CONTACT` | Does not start with 09, or is not 11 digits. Imports as typed. |
 | `SUFFIX` | The suffix was mapped to the matching dropdown value: "Junior" to `Jr`, "the 3rd" to `III`. If it matches nothing it is left blank. The database accepts only `Jr`, `Sr`, `I`, `II`, `III`, `IV`, `V`. |
 | `SECTOR` | A sector code is not on the Reference sheet. The token is filed under Other Sectors instead of blocking. |
