@@ -6,7 +6,7 @@
     "lint:js": "eslint public/assets/js"
   },
   "devDependencies": {
-    "eslint": "^9.39.5",
+    "eslint": "^10.9.1",
     "globals": "^17.9.0"
   }
 }
