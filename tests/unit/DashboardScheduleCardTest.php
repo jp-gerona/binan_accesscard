@@ -158,7 +158,7 @@ final class DashboardScheduleCardTest extends CIUnitTestCase
         $marked = 0;
         foreach ($grid['weeks'] as $week) {
             foreach ($week as $cell) {
-                if ($cell['day'] === $today) {
+                if (! $cell['isOutside'] && $cell['day'] === $today) {
                     $this->assertTrue($cell['isToday']);
                     $marked++;
                 } elseif ($cell['day'] !== null) {
