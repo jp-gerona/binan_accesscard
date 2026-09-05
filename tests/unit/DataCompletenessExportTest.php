@@ -3,10 +3,25 @@
 namespace Tests\Unit;
 
 use App\Libraries\DataCompletenessExport;
+use PhpOffice\PhpSpreadsheet\Cell\DataType;
 use PHPUnit\Framework\TestCase;
 
 final class DataCompletenessExportTest extends TestCase
 {
+    public function testFormulaLikeFamilyDataCellsAreExplicitStrings(): void
+    {
+        $sheet = DataCompletenessExport::build([
+            ['qr' => 6001, 'head' => '=HEAD', 'barangay' => '=BARANGAY',
+             'headGaps' => [], 'members' => [
+                 ['name' => '=MEMBER', 'relationship' => '=RELATIONSHIP', 'gaps' => []],
+             ]],
+        ])->getActiveSheet();
+
+        foreach (['B2', 'C2', 'D2', 'B3', 'C3', 'D3', 'E3'] as $coordinate) {
+            $this->assertSame(DataType::TYPE_STRING, $sheet->getCell($coordinate)->getDataType());
+        }
+    }
+
     public function testBuildsOneRowPerPersonWithMissingMarkers(): void
     {
         $families = [

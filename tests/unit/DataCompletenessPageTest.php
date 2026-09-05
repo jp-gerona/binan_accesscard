@@ -113,6 +113,10 @@ final class DataCompletenessPageTest extends CIUnitTestCase
         $this->assertSame('Education', $data['families'][1]['members'][0]['gaps'][0]);
         // A live barangay still labels its family as before.
         $this->assertSame('SANTO TOMAS', $data['families'][1]['barangay']);
+        // Member count includes the head and complete active members omitted from
+        // the missing-member detail list.
+        $this->assertSame(2, $data['families'][0]['memberCount']);
+        $this->assertSame(2, $data['families'][1]['memberCount']);
     }
 
     /**
@@ -127,6 +131,8 @@ final class DataCompletenessPageTest extends CIUnitTestCase
         $this->assertStringContainsString('id="completenessTable"', $view);
         $this->assertStringContainsString('records/completeness/download', $view);
         $this->assertStringContainsString('name="field"', $view);
+        $this->assertStringContainsString('>MEMBERS</th>', $view);
+        $this->assertStringContainsString("site_url('records/' . (int) (\$family['headID'] ?? 0))", $view);
         $this->assertStringNotContainsString('<?= $', $view);
     }
 }

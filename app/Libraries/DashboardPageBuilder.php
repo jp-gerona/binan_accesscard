@@ -444,10 +444,11 @@ class DashboardPageBuilder
         $families = [];
 
         foreach ($rows['heads'] as $head) {
-            $headID  = (int) $head['memberID'];
-            $members = [];
+            $headID        = (int) $head['memberID'];
+            $activeMembers = $membersByHead[$headID] ?? [];
+            $members       = [];
 
-            foreach ($membersByHead[$headID] ?? [] as $member) {
+            foreach ($activeMembers as $member) {
                 $gaps = self::blankLabels($member, self::COMPLETENESS_LABELS);
 
                 if ($gaps === []) {
@@ -475,9 +476,10 @@ class DashboardPageBuilder
                 'qr'       => $qrByHead[$headID] ?? null,
                 'head'     => trim(($head['firstname'] ?? '') . ' ' . ($head['lastname'] ?? '')),
                 'barangay' => (string) ($barangays[(int) ($head['barangayID'] ?? 0)] ?? ''),
-                'headGaps' => $headGaps,
-                'members'  => $members,
-                'gapCount' => count($headGaps) + array_sum(array_map(static fn (array $m): int => count($m['gaps']), $members)),
+                'headGaps'    => $headGaps,
+                'members'     => $members,
+                'memberCount' => 1 + count($activeMembers),
+                'gapCount'    => count($headGaps) + array_sum(array_map(static fn (array $m): int => count($m['gaps']), $members)),
             ];
         }
 

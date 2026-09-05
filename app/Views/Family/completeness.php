@@ -100,6 +100,7 @@ foreach (($tiles['byField'] ?? []) as $label => $count) {
           <th class="fw-semibold small text-center">QR</th>
           <th class="fw-semibold small">HEAD</th>
           <th class="fw-semibold small">BARANGAY</th>
+          <th class="fw-semibold small text-center">MEMBERS</th>
           <th class="fw-semibold small">HEAD GAPS</th>
           <th class="fw-semibold small">MEMBERS WITH GAPS</th>
         </tr>
@@ -108,8 +109,9 @@ foreach (($tiles['byField'] ?? []) as $label => $count) {
         <?php foreach ($families as $family): ?>
           <tr>
             <td class="text-center text-nowrap"><?= esc(($family['qr'] ?? null) !== null ? (string) $family['qr'] : '-') ?></td>
-            <td><?= esc((string) ($family['head'] ?? '-')) ?></td>
+            <td><a href="<?= esc(site_url('records/' . (int) ($family['headID'] ?? 0)), 'attr') ?>"><?= esc((string) ($family['head'] ?? '-')) ?></a></td>
             <td><?= esc((string) ($family['barangay'] ?? '')) ?></td>
+            <td class="text-center"><?= esc((string) ($family['memberCount'] ?? 0)) ?></td>
             <td>
               <?php if (($family['headGaps'] ?? []) === []): ?>
                 <span class="text-muted">None</span>
@@ -137,7 +139,7 @@ foreach (($tiles['byField'] ?? []) as $label => $count) {
           </tr>
         <?php endforeach; ?>
         <?php if ($families === []): ?>
-          <tr><td colspan="5" class="text-muted">No families with missing profile data.</td></tr>
+          <tr><td colspan="6" class="text-muted">No families with missing profile data.</td></tr>
         <?php endif; ?>
         </tbody>
       </table>

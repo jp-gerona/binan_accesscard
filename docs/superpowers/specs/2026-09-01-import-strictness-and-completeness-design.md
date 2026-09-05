@@ -50,10 +50,9 @@ Two confirmed false positives compound this:
   case-insensitively; the flood is `INCOME is required` on every blank, plus
   ~790 free-text amounts ("P3000", "10, 000", "n/a") the parser cannot read.
 
-Separately, one latent trap: `BDAY-RANGE` warns that a future-dated birthday
-"imports anyway", but `MemberModel`'s `not_future_date` rule rejects it at
-write time and rolls back the whole family. Today that needs the external
-`tools/fix-future-birthdays.php` pre-step; the import should handle it.
+Separately, a future-dated birthday gets a `BDAY-FUTURE` warning and imports
+with a NULL birthday, so the import handles it without an external cleanup
+pre-step.
 
 ## What this is not
 
@@ -98,7 +97,7 @@ Everything else demotes to a warning that imports blank. Code-by-code:
 | `INCOMPLETE` (new) | - | warning: blank relationship (imports as MEMBER), birthday, sex, civil status, education, job, monthly income, head address, head barangay. Imports blank; family listed on Data Completeness. |
 | `INCOME` | blocking | warning: value present but unmapable; imports blank, original text quoted in the message. |
 | `BDAY` | blocking | warning: value present but unparseable; imports blank, original text quoted. |
-| `BDAY-RANGE` (future dates) | warning, imports as typed (write-time trap) | warning, imports blank birthday. Over-150-years case unchanged. |
+| `BDAY-FUTURE` (future dates) | warning, imports as typed (write-time trap) | warning, imports blank birthday. |
 | `SEX` | blocking | warning: value not Male/Female after case folding; imports blank. |
 | `SERVICE` | blocking | warning: unknown service token after aliasing; that token is skipped, the rest import. |
 | Sector fallback | silent `OTHER` catch-all | warning when an *unrecognized* token is filed under the `OTHER` catch-all, so the fallback is visible. A deliberately typed `OTHER` stays silent. |
@@ -132,9 +131,7 @@ Normalize before parsing: collapse inner whitespace, double dashes to one
 M-D-Y order ("9/23/1989"). The result must parse as a full, real MM-DD-YYYY
 date. Truncated ("03-07"), year-only ("2008"), and 5-digit years do not
 parse: `BDAY` warning, blank birthday, original quoted. Future dates: blank
-birthday with the `BDAY-RANGE` warning, which removes the write-time
-rejection trap and the need for `fix-future-birthdays.php` as an import
-pre-step.
+birthday with the `BDAY-FUTURE` warning.
 
 ### Services
 

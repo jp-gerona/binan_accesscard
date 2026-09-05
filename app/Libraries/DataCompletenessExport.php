@@ -3,6 +3,7 @@
 namespace App\Libraries;
 
 use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
+use PhpOffice\PhpSpreadsheet\Cell\DataType;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 
 /**
@@ -64,7 +65,7 @@ class DataCompletenessExport
 
                 foreach ($values as $index => $value) {
                     $coordinate = Coordinate::stringFromColumnIndex($index + 1) . $row;
-                    $sheet->getCell($coordinate)->setValue($value);
+                    $sheet->getCell($coordinate)->setValueExplicit((string) $value, DataType::TYPE_STRING);
                 }
 
                 $row++;

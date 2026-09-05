@@ -311,11 +311,10 @@ testing, and a 10,000-person file with about 1,000 seeded field errors. Every
 dropdown column uses the sheet's actual option strings, so a tester can open any
 cell and find the value already matching its dropdown.
 
-**`php tools/fix-future-birthdays.php <in.xlsx> <out.xlsx>`** rewrites
-future-dated birthdays so a file imports cleanly, leaving everything else
-byte-for-byte identical. It exists because `MemberModel`'s `not_future_date` rule
-rejects such a birthday on write, and one bad member rolls back its whole family,
-so a file full of them silently loses hundreds of families. It is fast because it
-does not load the workbook: an `.xlsx` is a ZIP of XML, birthdays are the only
-entries in `xl/sharedStrings.xml` formatted MM-DD-YYYY, so it patches that one XML
-member in place and leaves the rest of the archive untouched.
+**`php tools/fix-future-birthdays.php <in.xlsx> <out.xlsx>`** is an optional
+cleanup tool that rewrites future-dated birthdays, leaving everything else
+byte-for-byte identical. It is no longer required before import: `BDAY-FUTURE`
+warns and imports the birthday as `NULL`. It is fast because it does not load the
+workbook: an `.xlsx` is a ZIP of XML, birthdays are the only entries in
+`xl/sharedStrings.xml` formatted MM-DD-YYYY, so it patches that one XML member in
+place and leaves the rest of the archive untouched.
