@@ -191,10 +191,11 @@ class ImportReviewPresenter
                     ? 'Head'
                     : (trim((string) ($data['relationship'] ?? '')) ?: 'Member'),
                 'values'   => [
-                    'lastname'  => (string) ($data['lastname'] ?? ''),
-                    'firstname' => (string) ($data['firstname'] ?? ''),
-                    'birthday'  => (string) ($data['birthday'] ?? ''),
-                    'sex'       => (string) ($data['sex'] ?? ''),
+                    'lastname'   => (string) ($data['lastname'] ?? ''),
+                    'firstname'  => (string) ($data['firstname'] ?? ''),
+                    'middlename' => (string) ($data['middlename'] ?? ''),
+                    'birthday'   => (string) ($data['birthday'] ?? ''),
+                    'sex'        => (string) ($data['sex'] ?? ''),
                 ],
                 'severity' => $this->worstSeverity($own),
                 'issues'   => $this->issuesFor($own, $columns, $sheetRow),

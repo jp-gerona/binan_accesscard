@@ -237,11 +237,12 @@
         tr.dataset.row = row.sheetRow;
 
         tr.appendChild(statusCell(row.severity));
-        tr.appendChild(el('td', null, row.family || ''));
-        tr.appendChild(el('td', null, row.role || ''));
         tr.appendChild(el('td', 'font-monospace text-nowrap', String(row.sheetRow)));
+        tr.appendChild(el('td', 'text-nowrap', row.qr || ''));
+        tr.appendChild(el('td', null, row.role || ''));
         tr.appendChild(el('td', null, (row.values || {}).lastname || ''));
-        tr.appendChild(el('td', null, (row.values || {}).firstname || ''));
+        tr.appendChild(el('td', 'text-nowrap', (row.values || {}).firstname || ''));
+        tr.appendChild(el('td', null, (row.values || {}).middlename || ''));
         tr.appendChild(issuesCell(row.issues || []));
         tr.appendChild(openCell(row));
 
@@ -322,7 +323,7 @@
         wrap.appendChild(grid);
 
         var actions = el('div', 'd-flex justify-content-end gap-2 mt-3');
-        var discard = el('button', 'btn btn-link js-import-discard', 'Discard');
+        var discard = el('button', 'btn btn-secondary js-import-discard', 'Discard');
         discard.type = 'button';
         var apply = el('button', 'btn btn-primary js-import-apply', 'Apply');
         apply.type = 'button';
