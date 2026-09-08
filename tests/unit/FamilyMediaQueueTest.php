@@ -70,6 +70,31 @@ final class FamilyMediaQueueTest extends CIUnitTestCase
         $handler->handle([], ['jobID' => $jobId], new JobReporter($this->queue, $jobId));
     }
 
+    public function testWorkerWrappersQueueReconciliationBeforeDrainingTheSharedQueue(): void
+    {
+        $wrappers = [
+            'scripts/queue-worker.sh' => [
+                '"$PHP_BIN" "$PROJECT_DIR/spark" media:queue-reconcile',
+                '"$PHP_BIN" "$PROJECT_DIR/spark" queue:work',
+            ],
+            'scripts/queue-worker.ps1' => [
+                "\$reconcileOutput = & \$phpExe \$spark 'media:queue-reconcile'",
+                "\$argList = @(\$spark, 'queue:work'",
+            ],
+        ];
+
+        foreach ($wrappers as $wrapper => [$producer, $drainer]) {
+            $contents = file_get_contents(ROOTPATH . $wrapper);
+
+            $this->assertIsString($contents, $wrapper . ' must be readable.');
+            $producerAt = strpos($contents, $producer);
+            $drainerAt = strpos($contents, $drainer);
+            $this->assertNotFalse($producerAt, $wrapper . ' must invoke the media reconciliation producer.');
+            $this->assertNotFalse($drainerAt, $wrapper . ' must invoke the shared queue drainer.');
+            $this->assertLessThan($drainerAt, $producerAt, $wrapper . ' must queue reconciliation before draining.');
+        }
+    }
+
     public function testQueueConfigurationResolvesTheMediaReconcileHandler(): void
     {
         $this->assertSame(FamilyMediaReconcileJob::class, (new Queue())->handlers['media_reconcile']);

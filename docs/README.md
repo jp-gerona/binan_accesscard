@@ -20,18 +20,18 @@ come back for a module chapter when you need it.
 |---|---|
 | [00 Introduction](00-introduction.md) | What the system does, who uses it, and the glossary the rest of the handbook assumes |
 | [01 Architecture](01-architecture.md) | The CodeIgniter layout, feature subnamespaces, the request lifecycle, and the boundary between controllers and libraries |
-| [02 Database](02-database.md) | The entity relationship diagram, a tour of all 17 tables, and why there are no migrations |
+| [02 Database](02-database.md) | The entity relationship diagram, a tour of all 18 tables including the V24 media registry, and why there are no migrations |
 | [03 Setup](03-setup.md) | Getting a checkout running: prerequisites, the dump, `.env`, and the three ways to serve the app |
 | [04 Networking](04-networking.md) | Reaching the app from somewhere other than localhost, and the `baseURL` rule that bites everyone once |
-| [05 Background worker](05-background-worker.md) | The job queue, the worker that drains it, and why a large import needs it |
-| [06 Operations and handover](06-operations-and-handover.md) | Deploying, backing up, running the worker as a service, administering accounts, and where to look when something breaks |
+| [05 Background worker](05-background-worker.md) | The job queue, the one-minute worker, and automatic private-media reconciliation |
+| [06 Operations and handover](06-operations-and-handover.md) | Deploying, matched database and media-root backups, running the worker as a service, administering accounts, and where to look when something breaks |
 
 ## The modules
 
 | Chapter | What is in it |
 |---|---|
 | [10 Navigation and access](10-navigation-and-access.md) | Roles, the navigation manifest, and the rule that every page has exactly one URL |
-| [11 Records](11-records.md) | Families and members, the entry form, the records list, and editing |
+| [11 Records](11-records.md) | Families and members, the entry form, the records list, editing, and private portrait and signature workflow |
 | [12 Import](12-import.md) | The Excel import, every validation rule, the review screen, and the diagnostic tools |
 | [13 Reference data](13-reference-data.md) | Barangays, categories, sectors, services, and subsidy types |
 | [14 Access cards](14-access-cards.md) | Control numbers, QR generation, and card printing |

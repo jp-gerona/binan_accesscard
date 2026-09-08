@@ -25,7 +25,9 @@ job.
 `type` to its handler, registered in `app/Config/Queue.php`. Today there is one
 handler: `family_import`, handled by `app/Jobs/FamilyImportJob.php`. Adding a job
 type means writing a handler that implements `JobHandlerInterface` and adding one
-line to the config.
+line to the config. `media_reconcile` is another handler. It scans the configured
+private family-media folder and updates the media registry; it does not serve a
+page and it does not watch the filesystem.
 
 **The wrappers** are the scripts you actually run. `scripts/queue-worker.sh` and
 `scripts/queue-worker.ps1` drain the queue once and exit.
@@ -82,6 +84,19 @@ under a dedicated least-privilege service account rather than SYSTEM. That
 account needs read and write access to `writable/` and `writable/uploads/`, plus
 network access to MySQL, and nothing else. The reason for the care is that this
 worker parses untrusted uploaded files.
+
+## Family-media reconciliation
+
+Every scheduled fire first runs `php spark media:queue-reconcile`, then drains
+the shared queue. The producer keeps at most one `media_reconcile` job pending or
+processing, so one-minute fires do not pile up scans. The job then scans
+`familymediasettings.root` once. This is automatic reconciliation through the
+shared worker, not a reconciliation page and not a filesystem watcher.
+
+The folder must be configured before the one-minute worker is installed. The
+worker account needs read and write access to it in addition to its existing
+`writable/` access. Chapter 06 gives the deployment command and ownership rule;
+chapter 11 gives the filename and correction workflow.
 
 Logs land in `writable/logs/queue-worker.log`:
 

@@ -198,6 +198,15 @@ final class FamilyMediaStorageTest extends CIUnitTestCase
         $this->assertNull($this->storage->metadata('019186.photo.jpg'));
     }
 
+    public function testConfiguredRootIsOutsidePublicAndWritableProjectDirectories(): void
+    {
+        $configuredRoot = $this->storage->root();
+
+        $this->assertNotNull($configuredRoot);
+        $this->assertFalse(str_starts_with($configuredRoot . DIRECTORY_SEPARATOR, realpath(FCPATH) . DIRECTORY_SEPARATOR));
+        $this->assertFalse(str_starts_with($configuredRoot . DIRECTORY_SEPARATOR, realpath(WRITEPATH) . DIRECTORY_SEPARATOR));
+    }
+
     public function testRootIsNullOnlyWhenTheConfigurationIsUnusable(): void
     {
         $this->assertNotNull($this->storage->root());
