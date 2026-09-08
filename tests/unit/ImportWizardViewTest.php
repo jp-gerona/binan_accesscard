@@ -85,7 +85,7 @@ final class ImportWizardViewTest extends CIUnitTestCase
 
         $this->assertStringContainsString('id="importReviewTable"', $html);
 
-        foreach (['Family', 'Role', 'Row', 'Last Name', 'First Name'] as $column) {
+        foreach (['ID', 'Role', 'Row', 'Last Name', 'First Name'] as $column) {
             $this->assertStringContainsString($column, $html);
         }
     }

@@ -40,15 +40,15 @@ $summary = $summary ?? [];
     <table class="table table-hover align-middle mb-0" id="importReviewTable">
         <thead class="text-nowrap">
             <tr>
-                <th scope="col" style="width: 1%;"><span class="visually-hidden">Status</span></th>
-                <th scope="col" style="width: 1%;">Row</th>
-                <th scope="col" style="width: 1%;">ID</th>
-                <th scope="col" style="width: 1%;">Role</th>
-                <th scope="col" style="width: 1%;">Last Name</th>
-                <th scope="col" style="width: 1%;">First Name</th>
-                <th scope="col" style="width: 1%;">Middle Name</th>
+                <th scope="col" class="import-review-status-col"><span class="visually-hidden">Status</span></th>
+                <th scope="col" class="import-review-compact-col">Row</th>
+                <th scope="col" class="import-review-compact-col">ID</th>
+                <th scope="col" class="import-review-compact-col">Role</th>
+                <th scope="col" class="import-review-compact-col">Last Name</th>
+                <th scope="col" class="import-review-compact-col">First Name</th>
+                <th scope="col" class="import-review-compact-col">Middle Name</th>
                 <th scope="col" class="w-100">Issues</th>
-                <th scope="col" style="width: 1%;"><span class="visually-hidden">Open</span></th>
+                <th scope="col" class="import-review-open-col"><span class="visually-hidden">Open</span></th>
             </tr>
         </thead>
         <tbody></tbody>

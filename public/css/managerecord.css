@@ -634,8 +634,9 @@ div.dt-container div.dt-search .input-group {
     gap: 0.25rem;
 }
 
-.import-review-status-col,
-.import-review-open-col {
+#importReviewTable .import-review-compact-col,
+#importReviewTable .import-review-status-col,
+#importReviewTable .import-review-open-col {
     width: 1%;
     white-space: nowrap;
 }
