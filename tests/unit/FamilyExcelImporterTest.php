@@ -956,10 +956,13 @@ final class FamilyExcelImporterTest extends CIUnitTestCase
 
     // -- strict service / sector codes -----------------------------------------
 
-    public function testServiceTyposAndCommaSeparatedCodesResolveToRealCodes(): void
+    public function testSpacingAndCommaSeparatedServiceCodesResolveToRealCodes(): void
     {
+        // Legitimate non-alias repairs stay: spacing cleanup ("EDA 8" -> "EDA8") and
+        // comma-separated reference codes. ED8A/EDAI/SCI are no longer curated to
+        // EDA8/SC1 - each unknown token must block (see testFormerServiceAliasTokensNowBlock).
         $cases = [
-            'ED8A' => [80], 'EDAI' => [80], 'SCI' => [10], 'EDA 8' => [80],
+            'EDA 8' => [80],
             'B2,B3' => [20, 21],
         ];
 
@@ -1016,12 +1019,62 @@ final class FamilyExcelImporterTest extends CIUnitTestCase
 
     public function testDeliberatelyTypedOtherSectorStaysSilent(): void
     {
+        // 'OTHER' is a real reference shortcode (see the sector reference), so it stays
+        // silent - only the OTHERS alias is gone (see the OTHERSectorToken tests below).
         $result = $this->importerWithLookups()->validateAndBuild([
             $this->headRow(3, '6001', ['sector' => 'OTHER']),
         ]);
 
         $this->assertNotContains('SECTOR', $this->codes($result));
         $this->assertSame([9], $result['families'][0]['headPayload']['sector_ids']);
+    }
+
+    public function testFormerServiceAliasTokensNowBlock(): void
+    {
+        // Fix 1: the importer must not guess-repair service codes. Each former alias
+        // token blocks on its own, names the exact token, and assigns no service IDs.
+        foreach (['ED8A', 'EDAI', 'SCI'] as $typed) {
+            $result = $this->importerWithLookups()->validateAndBuild([
+                $this->headRow(3, '6001', ['services' => $typed]),
+            ]);
+
+            $this->assertSame(1, $result['counts']['blocking'], "'{$typed}' must block");
+            $service = $this->errorsFor($result, 'SERVICE');
+            $this->assertCount(1, $service, "'{$typed}' must raise exactly one SERVICE error");
+            $this->assertSame('blocking', $service[0]['severity']);
+            $this->assertStringContainsString($typed, $service[0]['message'],
+                "'{$typed}' must be named in the error message");
+            $this->assertSame([], $result['families'][0]['headServiceIds'],
+                "'{$typed}' must leave the row with no service IDs");
+        }
+    }
+
+    public function testOTHERSectorTokenBlocksAndAssignsNoSectorId(): void
+    {
+        // Fix 1: OTHERS used to be aliased to the Other sector ID; it is now an unknown
+        // token that blocks and assigns no Other-sector ID.
+        $result = $this->importerWithLookups()->validateAndBuild([
+            $this->headRow(3, '6001', ['sector' => 'OTHERS']),
+        ]);
+
+        $this->assertSame(1, $result['counts']['blocking']);
+        $sector = $this->errorsFor($result, 'SECTOR');
+        $this->assertCount(1, $sector);
+        $this->assertSame('blocking', $sector[0]['severity']);
+        $this->assertStringContainsString('OTHERS', $sector[0]['message']);
+        $this->assertSame([], $result['families'][0]['headPayload']['sector_ids']);
+    }
+
+    public function testOTHERSectorTokenPreventsPartialSectorIdAssignment(): void
+    {
+        // A valid SC token sitting next to OTHERS must not survive as a partial assignment.
+        $result = $this->importerWithLookups()->validateAndBuild([
+            $this->headRow(3, '6001', ['sector' => 'SC,OTHERS']),
+        ]);
+
+        $this->assertSame(1, $result['counts']['blocking']);
+        $this->assertStringContainsString('OTHERS', $this->errorsFor($result, 'SECTOR')[0]['message']);
+        $this->assertSame([], $result['families'][0]['headPayload']['sector_ids']);
     }
 
     // -- helpers ---------------------------------------------------------------
@@ -1055,7 +1108,7 @@ final class FamilyExcelImporterTest extends CIUnitTestCase
     }
 
     /** Importer with the real-shaped sector/service lookup maps, so service
-     * alias/spacing resolution and the sector fallback have codes to hit. */
+     * spacing cleanup and the strict sector reference codes have codes to hit. */
     private function importerWithLookups(): FamilyExcelImporter
     {
         $importer  = $this->importer();
@@ -1067,7 +1120,7 @@ final class FamilyExcelImporterTest extends CIUnitTestCase
 
         $sectors = $reflection->getProperty('sectorByCode');
         $sectors->setAccessible(true);
-        $sectors->setValue($importer, ['SC' => 1, 'OTHER' => 9, 'OTHERS' => 9]);
+        $sectors->setValue($importer, ['SC' => 1, 'OTHER' => 9]);
 
         return $importer;
     }
