@@ -31,18 +31,15 @@ class FamilyMediaReconciler
     private FamilyMediaModel $media;
     private AuditTrailsModel $audit;
     private QrControlModel $qrControl;
-    private string $root = '';
 
     public function __construct(
         ?FamilyMediaStorage $storage = null,
         ?FamilyMediaModel $media = null,
-        ?string $root = null,
     ) {
         $this->storage = $storage ?? new FamilyMediaStorage();
         $this->media = $media ?? new FamilyMediaModel();
         $this->audit = new AuditTrailsModel();
         $this->qrControl = new QrControlModel();
-        $this->root = $root ?? (string) config('FamilyMediaSettings')->root;
     }
 
     /**
@@ -58,13 +55,14 @@ class FamilyMediaReconciler
     {
         $counts = $this->emptyCounts();
 
-        if ($this->root === '') {
-            $reporter->setTotal(0);
-
-            return $counts;
+        if ($this->storage->root() === null) {
+            // Missing, unconfigured, or project-confined root: fail loudly so the
+            // generic worker records a retry/failure instead of silently
+            // succeeding on an empty folder.
+            throw new RuntimeException('The family media root is not an accessible directory outside the project.');
         }
 
-        $filenames = $this->filenames();
+        $filenames = $this->storage->candidateFilenames();
         $total = count($filenames);
         $reporter->setTotal($total);
 
@@ -199,16 +197,13 @@ class FamilyMediaReconciler
     /** @param array<string, mixed> $row True when the stored fingerprint still matches the file. */
     private function unchanged(array $row, string $filename): bool
     {
-        $path = $this->root . DIRECTORY_SEPARATOR . $filename;
-        $size = @filesize($path);
-        $mtime = @filemtime($path);
-
-        if ($size === false || $mtime === false) {
+        $stat = $this->storage->metadata($filename);
+        if ($stat === null) {
             return false;
         }
 
-        return (int) ($row['byte_size'] ?? 0) === $size
-            && (string) ($row['source_modified_at'] ?? '') === date('Y-m-d H:i:s', $mtime);
+        return (int) ($row['byte_size'] ?? 0) === $stat['byte_size']
+            && (string) ($row['source_modified_at'] ?? '') === $stat['source_modified_at'];
     }
 
     /** @param array<string, mixed> $row @return array<string, mixed> */
@@ -269,25 +264,6 @@ class FamilyMediaReconciler
         }
 
         return $known;
-    }
-
-    /** @return string[] Direct children of the media root, dot entries excluded. */
-    private function filenames(): array
-    {
-        if ($this->root === '' || ! is_dir($this->root)) {
-            throw new RuntimeException('The family media root is not an accessible directory: ' . $this->root);
-        }
-
-        $items = @scandir($this->root);
-
-        if ($items === false) {
-            throw new RuntimeException('The family media root could not be listed: ' . $this->root);
-        }
-
-        return array_values(array_filter(
-            $items,
-            static fn (string $f): bool => $f !== '.' && $f !== '..',
-        ));
     }
 
     /** @return array{seen:int,linked:int,pending:int,invalid:int,missing:int,replaced:int} */

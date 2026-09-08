@@ -137,7 +137,18 @@ class FamilyMediaModel extends Model
             ->where('mediaID !=', $mediaId)
             ->first();
         if ($other !== null) {
-            return false;
+            // A stale missing row still occupies the head's one slot of this kind
+            // while its source file is gone (deletion keeps headID to remember who
+            // owned it). Releasing that row's headID lets a fresh file for the same
+            // head/kind link again; any live row still blocks the link, so one
+            // current item per (headID, kind) is preserved.
+            if ((string) ($other['state'] ?? '') !== self::STATE_MISSING) {
+                return false;
+            }
+
+            if (! $this->update((int) $other['mediaID'], ['headID' => null])) {
+                return false;
+            }
         }
 
         $payload = [

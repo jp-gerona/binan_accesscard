@@ -162,6 +162,53 @@ final class FamilyMediaStorageTest extends CIUnitTestCase
         $this->assertSame(['019186.photo.jpg', '019187.signature.png'], array_column($files, 'source_filename'));
     }
 
+    public function testCandidateFilenamesIgnoresNonCanonicalEntriesTempsDotfilesDirsAndLinks(): void
+    {
+        $this->writeJpeg('019186.photo.jpg', 100, 100);
+        file_put_contents($this->root . DIRECTORY_SEPARATOR . '.DS_Store', 'junk');
+        file_put_contents($this->root . DIRECTORY_SEPARATOR . '.019187.photo.jpg.tmp-abc', 'partial');
+        $this->writeJpegAt($this->root . DIRECTORY_SEPARATOR . '19186.photo.jpg', 100, 100, [255, 255, 255]);
+        mkdir($this->root . DIRECTORY_SEPARATOR . 'subdir', 0700);
+        $outside = tempnam(sys_get_temp_dir(), 'family-media-outside-');
+        $this->assertNotFalse($outside);
+        symlink($outside, $this->root . DIRECTORY_SEPARATOR . '019999.photo.jpg');
+
+        // Only the canonical real file is a candidate; nothing else is judged invalid.
+        $this->assertSame(['019186.photo.jpg'], $this->storage->candidateFilenames());
+
+        @unlink($outside);
+        @rmdir($this->root . DIRECTORY_SEPARATOR . 'subdir');
+    }
+
+    public function testMetadataReportsTheSameCheapStatInspectionUsesAndRejectsGoneOrNonCanonicalFiles(): void
+    {
+        $path = $this->writeJpeg('019186.photo.jpg', 100, 100);
+        $inspection = $this->storage->inspect('019186.photo.jpg');
+
+        $stat = $this->storage->metadata('019186.photo.jpg');
+
+        $this->assertSame((int) $inspection['byte_size'], $stat['byte_size']);
+        $this->assertSame($inspection['source_modified_at'], $stat['source_modified_at']);
+
+        $this->assertNull($this->storage->metadata('019187.photo.jpg'));
+        $this->assertNull($this->storage->metadata('19186.photo.jpg'));
+        $this->assertNull($this->storage->metadata('../019186.photo.jpg'));
+
+        @unlink($path);
+        $this->assertNull($this->storage->metadata('019186.photo.jpg'));
+    }
+
+    public function testRootIsNullOnlyWhenTheConfigurationIsUnusable(): void
+    {
+        $this->assertNotNull($this->storage->root());
+        $this->assertSame(realpath($this->root), $this->storage->root());
+        $this->assertNull($this->storageFor('')->root());
+        $this->assertNull($this->storageFor(FCPATH . '/definitely-not-here')->root());
+        $this->assertNull($this->storageFor(FCPATH)->root());
+        $this->assertNull($this->storageFor(WRITEPATH)->root());
+        $this->assertNull($this->storageFor(ROOTPATH)->root());
+    }
+
     public function testItAtomicallyReplacesAnUploadedFile(): void
     {
         $destination = $this->writeJpeg('019186.photo.jpg', 100, 100, [255, 0, 0]);

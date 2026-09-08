@@ -146,6 +146,76 @@ class FamilyMediaStorage
         return $this->rootPathFor($filename);
     }
 
+    /**
+     * The resolved, fail-closed root, or null when the configuration is unusable
+     * (unset, missing, or project-confined). Callers that must fail loudly on a
+     * bad deployment check this before enumerating.
+     */
+    public function root(): ?string
+    {
+        return $this->root;
+    }
+
+    /**
+     * Lists the direct-child files the registry may reconcile: canonical media
+     * filenames that are real regular files inside the root. Subdirectories,
+     * upload temporary files, dotfiles, and anything that is a link are ignored
+     * here rather than judged invalid, so an in-progress atomic write never
+     * spuriously fails a scan. Files are never opened.
+     *
+     * @return list<string>
+     */
+    public function candidateFilenames(): array
+    {
+        if ($this->root === null) {
+            return [];
+        }
+
+        $filenames = scandir($this->root);
+        if ($filenames === false) {
+            return [];
+        }
+
+        $candidates = [];
+        foreach ($filenames as $filename) {
+            if ($filename === '.' || $filename === '..'
+                || $this->parseFilename($filename) === null
+                || $this->rootPathFor($filename) === null) {
+                continue;
+            }
+
+            $candidates[] = $filename;
+        }
+
+        return $candidates;
+    }
+
+    /**
+     * Cheap metadata for an already-known canonical file, without reading its
+     * bytes. Returns null when the file is gone, is a link, or sits outside the
+     * root, so an unchanged known row can be reused without re-opening content.
+     *
+     * @return array{byte_size:int, source_modified_at:string}|null
+     */
+    public function metadata(string $filename): ?array
+    {
+        $path = $this->rootPathFor($filename);
+        if ($path === null) {
+            return null;
+        }
+
+        $size = @filesize($path);
+        $mtime = @filemtime($path);
+        if ($size === false || $size <= 0 || $mtime === false) {
+            return null;
+        }
+
+        return [
+            'byte_size'          => $size,
+            'source_modified_at' => date('Y-m-d H:i:s', $mtime),
+        ];
+    }
+
     /** @throws InvalidArgumentException when the control number or kind is invalid. */
     public function canonicalFilename(int $controlNo, string $kind): string
     {

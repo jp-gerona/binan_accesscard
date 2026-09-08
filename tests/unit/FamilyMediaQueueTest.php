@@ -5,9 +5,12 @@ namespace Tests\Unit;
 use App\Jobs\FamilyMediaReconcileJob;
 use App\Jobs\JobReporter;
 use App\Libraries\FamilyMediaReconciler;
+use App\Libraries\FamilyMediaStorage;
 use App\Models\Jobs\JobQueueModel;
 use CodeIgniter\Test\CIUnitTestCase;
+use Config\FamilyMediaSettings;
 use Config\Queue;
+use RuntimeException;
 use Tests\Support\Database\DumpSchema;
 
 /** @internal */
@@ -39,13 +42,32 @@ final class FamilyMediaQueueTest extends CIUnitTestCase
 
     public function testMediaReconcileHandlerReturnsDoneWithCompactCounts(): void
     {
+        $root = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'media-reconcile-queue-' . bin2hex(random_bytes(6));
+        mkdir($root, 0700, true);
+
+        try {
+            $settings = new FamilyMediaSettings();
+            $settings->root = $root;
+            $jobId = $this->queue->enqueue('media_reconcile', []);
+            $handler = new FamilyMediaReconcileJob(new FamilyMediaReconciler(new FamilyMediaStorage($settings)));
+
+            $outcome = $handler->handle([], ['jobID' => $jobId], new JobReporter($this->queue, $jobId));
+
+            $this->assertSame('done', $outcome->status);
+            $this->assertSame(['seen' => 0, 'linked' => 0, 'pending' => 0, 'invalid' => 0, 'missing' => 0, 'replaced' => 0], $outcome->result);
+        } finally {
+            @rmdir($root);
+        }
+    }
+
+    public function testMediaReconcileHandlerThrowsOnAnUnconfiguredRoot(): void
+    {
         $jobId = $this->queue->enqueue('media_reconcile', []);
         $handler = new FamilyMediaReconcileJob(new FamilyMediaReconciler());
 
-        $outcome = $handler->handle([], ['jobID' => $jobId], new JobReporter($this->queue, $jobId));
+        $this->expectException(RuntimeException::class);
 
-        $this->assertSame('done', $outcome->status);
-        $this->assertSame(['seen' => 0, 'linked' => 0, 'pending' => 0, 'invalid' => 0, 'missing' => 0, 'replaced' => 0], $outcome->result);
+        $handler->handle([], ['jobID' => $jobId], new JobReporter($this->queue, $jobId));
     }
 
     public function testQueueConfigurationResolvesTheMediaReconcileHandler(): void

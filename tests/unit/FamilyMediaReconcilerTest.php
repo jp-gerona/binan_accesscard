@@ -9,6 +9,7 @@ use App\Models\Families\FamilyMediaModel;
 use App\Models\Jobs\JobQueueModel;
 use CodeIgniter\Test\CIUnitTestCase;
 use Config\FamilyMediaSettings;
+use RuntimeException;
 use Tests\Support\Database\DumpSchema;
 use Tests\Support\Database\ReferentialFixture;
 
@@ -94,6 +95,42 @@ final class FamilyMediaReconcilerTest extends CIUnitTestCase
         $this->assertSame($headId, (int) $row['headID']);
     }
 
+    public function testANewSourceTakesTheSlotHeldByAMissingRowForTheSameHeadAndKind(): void
+    {
+        $headId = $this->seedHeadWithControl(19193);
+        $path = $this->writeJpeg('019193.photo.jpg', 100, 100);
+        $this->reconciler()->run($this->reporter());
+        @unlink($path);
+        $this->reconciler()->run($this->reporter());
+
+        // The same head now also maps a second control number; the new canonical
+        // file resolves to the head whose photo slot is held by the missing row.
+        db_connect()->table('qr_control')->insert(['control_no' => 19194, 'headID' => $headId]);
+        $this->writeJpeg('019194.photo.jpg', 100, 100);
+
+        $summary = $this->reconciler()->run($this->reporter());
+        $linked = $this->mediaModel->findLinked($headId, 'photo');
+
+        $this->assertSame(1, $summary['linked']);
+        $this->assertNotNull($linked);
+        $this->assertSame('019194.photo.jpg', $linked['source_filename']);
+
+        // The one-current-item-per-(headID, kind) invariant still holds.
+        $all = $this->mediaModel->findLinkedForHead($headId);
+        $this->assertCount(1, $all);
+        $this->assertSame('019194.photo.jpg', $all[0]['source_filename']);
+    }
+
+    public function testUnconfiguredRootThrowsSoTheWorkerRecordsAFailure(): void
+    {
+        $settings = new FamilyMediaSettings();
+        $settings->root = '';
+        $reconciler = new FamilyMediaReconciler(new FamilyMediaStorage($settings), $this->mediaModel);
+
+        $this->expectException(RuntimeException::class);
+        $reconciler->run($this->reporter());
+    }
+
     public function testNonHeadMappingRemainsPending(): void
     {
         $headId = 119190;
@@ -151,7 +188,7 @@ final class FamilyMediaReconcilerTest extends CIUnitTestCase
         $settings = new FamilyMediaSettings();
         $settings->root = $this->root;
 
-        return new FamilyMediaReconciler(new FamilyMediaStorage($settings), $this->mediaModel, $this->root);
+        return new FamilyMediaReconciler(new FamilyMediaStorage($settings), $this->mediaModel);
     }
 
     private function reporter(): JobReporter
