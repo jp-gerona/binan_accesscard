@@ -36,7 +36,7 @@ class ImportReviewPresenter
         'QR-07'      => ['label' => 'QR Number too large',         'hint' => 'Above the allowed maximum.'],
         'QR-08'      => ['label' => 'QR Number is an error cell',  'hint' => 'The cell holds an Excel error value. Retype the number.'],
         'QR-12'      => ['label' => 'QR Number is a formula',      'hint' => 'Type the number itself, not a formula.'],
-        'QR-TAKEN'   => ['label' => 'QR belongs to someone else',  'hint' => 'That QR is already used by a DIFFERENT family in the system. Correct the QR number, or give this family its own.'],
+        'QR-TAKEN'   => ['label' => 'QR already assigned to another family', 'hint' => 'That QR is already used by a DIFFERENT family in the system. Correct the QR number, or give this family its own.'],
         'HEAD-NONE'  => ['label' => 'No Head in the family',       'hint' => 'Set Relationship = Head on exactly one person.'],
         'HEAD-MULTI' => ['label' => 'More than one Head',          'hint' => 'Only one person per family can be the Head.'],
         'FP-ADDR'    => ['label' => 'Two addresses under one QR',  'hint' => 'One QR = one household. Fix the mistyped QR, or give the other household its own QR.'],
@@ -45,7 +45,7 @@ class ImportReviewPresenter
         'BDAY'       => ['label' => 'Invalid birthday',            'hint' => 'Could not be read; imports with a blank birthday. The family is listed on the Data Completeness report.'],
         'SEX'        => ['label' => 'Invalid sex',                 'hint' => 'Not Male or Female; imports with no sex. The family is listed on the Data Completeness report.'],
         'INCOME'     => ['label' => 'Invalid monthly income',      'hint' => 'Not a bracket or readable amount; imports with no income. The family is listed on the Data Completeness report.'],
-        'SERVICE'    => ['label' => 'Unknown service code',        'hint' => 'The code is not on the Reference sheet and is not saved; the row\'s other services import.'],
+        'SERVICE'    => ['label' => 'Invalid Service Code',        'hint' => 'The code is not on the Reference sheet. Choose a listed service code before importing.'],
         'LENGTH'     => ['label' => 'Value too long',              'hint' => 'Shorten it to fit the database limit.'],
         'ADD-MEMBER' => ['label' => 'Will be added to an existing family', 'hint' => 'The QR already belongs to a family. These people are ADDED to it on import - to skip one, delete the row from the file.'],
         'DUP-EXISTS' => ['label' => 'Already in the system',       'hint' => 'Same QR, same head (name + birthday) as a family already on file. SKIPPED on import.'],
@@ -53,7 +53,7 @@ class ImportReviewPresenter
         'DUP-DIFF'   => ['label' => 'Details differ from the system', 'hint' => 'Same family, but the file disagrees with what is stored. The import skips it, so nothing here is saved - edit the record in Manage Family.'],
         'DUP-PERSON' => ['label' => 'Possible duplicate person',   'hint' => 'Same name, birthday and address as another row. Imports anyway - delete a row if it really is a duplicate.'],
         'BRGY'       => ['label' => 'Barangay not recognised',     'hint' => 'Not an official Biñan barangay; imports with no barangay. The family is listed on the Data Completeness report.'],
-        'SECTOR'     => ['label' => 'Sector filed under Other',     'hint' => 'The code is not on the Reference sheet, so it is filed under Other Sectors.'],
+        'SECTOR'     => ['label' => 'Invalid Sector Code',         'hint' => 'The code is not on the Reference sheet. Choose a listed sector code before importing.'],
         'CONTACT'    => ['label' => 'Contact number format',       'hint' => 'Should start with 09 and be 11 digits. Imports as typed.'],
         'SUFFIX'     => ['label' => 'Suffix adjusted',             'hint' => 'Changed to the matching dropdown value, or left blank if it matches none.'],
         'BDAY-RANGE' => ['label' => 'Birthday out of range',       'hint' => 'Over 150 years ago. Imports as typed.'],
@@ -283,7 +283,7 @@ class ImportReviewPresenter
 
             $byCode[$code] = [
                 'code'     => $code,
-                'label'    => self::GROUPS[$code]['label'] ?? $code,
+                'label'    => $this->issueLabel($error),
                 'severity' => $severity,
                 'message'  => (string) ($error['message'] ?? ''),
                 'cell'     => ($field !== null && isset($columns[(string) $field]))
@@ -372,7 +372,7 @@ class ImportReviewPresenter
 
             $byCode[$code] = [
                 'code'     => $code,
-                'label'    => self::GROUPS[$code]['label'] ?? $code,
+                'label'    => $this->issueLabel($error),
                 'severity' => $severity,
             ];
         }
@@ -380,6 +380,27 @@ class ImportReviewPresenter
         ksort($byCode);
 
         return array_values($byCode);
+    }
+
+    /**
+     * Returns the issue label shown in both the row and the code filter. REQUIRED
+     * and INCOMPLETE each cover several columns, so their label must identify the
+     * cell the operator needs to fill rather than just the shared machine code.
+     */
+    private function issueLabel(array $error): string
+    {
+        $code = (string) ($error['code'] ?? '');
+
+        if (in_array($code, ['REQUIRED', 'INCOMPLETE'], true)) {
+            $field = (string) ($error['field'] ?? '');
+            $fieldLabel = $field === 'monthlyincome'
+                ? 'Income'
+                : (self::FIELD_LABELS[$field] ?? 'value');
+
+            return 'Missing ' . $fieldLabel;
+        }
+
+        return self::GROUPS[$code]['label'] ?? $code;
     }
 
     /** Whether a shaped row survives the current narrowing. */

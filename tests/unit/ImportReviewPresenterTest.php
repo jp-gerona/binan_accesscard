@@ -282,6 +282,41 @@ final class ImportReviewPresenterTest extends CIUnitTestCase
         $this->assertNotContains('QR-11', array_column($summary['codes'], 'code'));
     }
 
+    public function testMissingAndAssignedIssueLabelsDescribeTheSpecificFieldAndOutcome(): void
+    {
+        $result = [
+            'rows' => [
+                $this->row(3, '6001', 'Head'),
+                $this->row(4, '6002', 'Head'),
+                $this->row(5, '6003', 'Head'),
+                $this->row(6, '6004', 'Head'),
+            ],
+            'errors' => [
+                $this->error(3, '6001', 'REQUIRED', 'blocking', 'firstname'),
+                $this->error(4, '6002', 'INCOMPLETE', 'warning', 'monthlyincome'),
+                $this->error(5, '6003', 'SERVICE', 'blocking', 'services'),
+                $this->error(6, '6004', 'QR-TAKEN', 'blocking', 'familyno'),
+            ],
+        ];
+
+        $page = $this->page($result);
+        $issue = $page['rows'][0]['issues'][0];
+        $incomeIssue = $page['rows'][1]['issues'][0];
+        $serviceIssue = $page['rows'][2]['issues'][0];
+        $takenIssue = $page['rows'][3]['issues'][0];
+
+        $this->assertSame('Missing FirstName', $issue['label']);
+        $this->assertSame('Missing Income', $incomeIssue['label']);
+        $this->assertSame('Invalid Service Code', $serviceIssue['label']);
+        $this->assertSame('QR already assigned to another family', $takenIssue['label']);
+
+        $labels = array_column((new ImportReviewPresenter())->build($result)['codes'], 'label', 'code');
+        $this->assertSame($issue['label'], $labels['REQUIRED']);
+        $this->assertSame($incomeIssue['label'], $labels['INCOMPLETE']);
+        $this->assertSame($serviceIssue['label'], $labels['SERVICE']);
+        $this->assertSame($takenIssue['label'], $labels['QR-TAKEN']);
+    }
+
     public function testIssuesCarryTheirExcelCellReference(): void
     {
         $result = [
@@ -318,8 +353,8 @@ final class ImportReviewPresenterTest extends CIUnitTestCase
         $codes = array_column((new ImportReviewPresenter())->build($result)['codes'], 'label', 'code');
 
         $this->assertSame('Future birthday (imports blank)', $codes['BDAY-FUTURE']);
-        $this->assertSame('Missing value (imports blank)', $codes['INCOMPLETE']);
-        $this->assertSame('Sector filed under Other', $codes['SECTOR']);
+        $this->assertSame('Missing Birthday', $codes['INCOMPLETE']);
+        $this->assertSame('Invalid Sector Code', $codes['SECTOR']);
     }
 
     public function testRowFetchesOneShapedRowBySheetRow(): void

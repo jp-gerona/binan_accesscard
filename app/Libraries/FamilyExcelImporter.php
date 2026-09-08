@@ -1356,9 +1356,10 @@ class FamilyExcelImporter
     }
 
     /**
-     * Maps a row's comma-separated sector codes to IDs. An unrecognized code is filed
-     * under the Other Sectors catch-all with a warning rather than aborting, mirroring
-     * the form. A deliberately typed OTHER/OTHERS is a real pick and stays silent.
+     * Maps a row's comma-separated sector codes to IDs. Every canonical token must
+     * exist in the reference lookup: an unknown token blocks the import rather than
+     * being silently filed under Other. A list containing any bad token returns no
+     * IDs, so a blocked row never carries a partial sector assignment.
      *
      * @param array{row: int, data: array<string, string>} $entry
      * @param array<string, int> $sectorByCode
@@ -1367,31 +1368,26 @@ class FamilyExcelImporter
     private function mapSectors(array $entry, string $familyNo, array $sectorByCode): array
     {
         $ids     = [];
-        $otherId = $sectorByCode['OTHER'] ?? null;
+        $invalid = false;
 
         foreach ($this->splitList((string) ($entry['data']['sector'] ?? '')) as $token) {
-            $code = strtoupper($token);
-
-            if (isset($sectorByCode[$code])) {
-                $ids[] = $sectorByCode[$code];
+            if (isset($sectorByCode[$token])) {
+                $ids[] = $sectorByCode[$token];
                 continue;
             }
 
-            if ($otherId !== null) {
-                $this->addError((int) $entry['row'], $familyNo, 'SECTOR', 'sector',
-                    'Sector "' . $token . '" is not on the Reference sheet - filed under Other Sectors.', 'warning');
-                $ids[] = $otherId;
-            }
+            $this->addError((int) $entry['row'], $familyNo, 'SECTOR', 'sector',
+                'Sector code "' . $token . '" is not on the Reference sheet. Choose a listed sector code.');
+            $invalid = true;
         }
 
-        return array_values(array_unique($ids));
+        return $invalid ? [] : array_values(array_unique($ids));
     }
 
     /**
-     * Maps a row's comma-separated service codes to IDs. A token that resolves to
-     * no code is skipped with a warning (the row's other services still import),
-     * because services are a junction table, not a column: an unknown code cannot
-     * be stored, but it must not cost the person their row.
+     * Maps a row's comma-separated service codes to IDs. Every canonical token must
+     * resolve to a reference service. A list containing any bad token returns no IDs,
+     * so the blocking review state cannot carry a partial service assignment.
      *
      * @param array{row: int, data: array<string, string>} $entry
      * @param array<string, int> $serviceByCode
@@ -1399,52 +1395,44 @@ class FamilyExcelImporter
      */
     private function mapServices(array $entry, string $familyNo, array $serviceByCode): array
     {
-        $ids = [];
+        $ids     = [];
+        $invalid = false;
 
         foreach ($this->splitList((string) ($entry['data']['services'] ?? '')) as $token) {
-            foreach ($this->serviceTokens((int) $entry['row'], $familyNo, $token, $serviceByCode) as $code) {
+            $codes = $this->serviceTokens((int) $entry['row'], $familyNo, $token, $serviceByCode);
+
+            if ($codes === []) {
+                $invalid = true;
+                continue;
+            }
+
+            foreach ($codes as $code) {
                 $ids[] = $serviceByCode[$code];
             }
         }
 
-        return array_values(array_unique($ids));
+        return $invalid ? [] : array_values(array_unique($ids));
     }
 
     /**
-     * Resolves ONE cell token to zero or more service codes. The whole token is
-     * tried first with its spaces removed ("EDA 8" -> EDA8), because a code with
-     * an inner space is one code; only then is it split on whitespace ("B2 B3" ->
-     * B2, B3), because two codes separated by a space are two.
+     * Resolves one already-canonical comma-delimited token to its service code.
+     * Whitespace is never a delimiter: canonicalization has removed it, so a value
+     * such as "EDA8 EDA9" is one invalid token ("EDA8EDA9") until corrected with
+     * a comma.
      *
      * @param array<string, int> $serviceByCode
      * @return list<string>
      */
     private function serviceTokens(int $row, string $familyNo, string $token, array $serviceByCode): array
     {
-        $whole = strtoupper(str_replace(' ', '', $token));
-        $whole = self::SERVICE_ALIASES[$whole] ?? $whole;
+        $code = self::SERVICE_ALIASES[$token] ?? $token;
 
-        if (isset($serviceByCode[$whole])) {
-            return [$whole];
-        }
-
-        $codes = [];
-
-        foreach (preg_split('/\s+/', trim($token)) ?: [] as $part) {
-            $code = strtoupper($part);
-            $code = self::SERVICE_ALIASES[$code] ?? $code;
-
-            if (isset($serviceByCode[$code])) {
-                $codes[] = $code;
-            }
-        }
-
-        if ($codes !== []) {
-            return $codes;
+        if (isset($serviceByCode[$code])) {
+            return [$code];
         }
 
         $this->addError($row, $familyNo, 'SERVICE', 'services',
-            'Service code "' . $token . '" is not on the Reference sheet - it is not saved.', 'warning');
+            'Service code "' . $token . '" is not on the Reference sheet. Choose a listed service code.');
 
         return [];
     }

@@ -863,15 +863,13 @@ final class FamilyExcelImporterTest extends CIUnitTestCase
         $this->assertSame(1, $result['counts']['rows']);
     }
 
-    // -- service aliasing + token splitting / sector fallback (Task 5) ---------
+    // -- strict service / sector codes -----------------------------------------
 
-    public function testServiceTyposAndSpacingResolveToRealCodes(): void
+    public function testServiceTyposAndCommaSeparatedCodesResolveToRealCodes(): void
     {
-        // "EDA 8" is one code with an inner space; "B2 B3" and "EDA1 EDA8" are two
-        // codes separated by a space (the missing-comma variants in the real file).
         $cases = [
             'ED8A' => [80], 'EDAI' => [80], 'SCI' => [10], 'EDA 8' => [80],
-            'B2 B3' => [20, 21], 'EDA1 EDA8' => [81, 80], 'B2,B3' => [20, 21],
+            'B2,B3' => [20, 21],
         ];
 
         foreach ($cases as $typed => $expectedIds) {
@@ -885,33 +883,44 @@ final class FamilyExcelImporterTest extends CIUnitTestCase
         }
     }
 
-    public function testUnknownServiceTokenWarnsAndIsSkipped(): void
+    public function testWhitespaceDelimitedServiceCodesMustBeFixed(): void
     {
         $result = $this->importerWithLookups()->validateAndBuild([
-            $this->headRow(3, '6001', ['services' => 'EDA8, XX9']),
+            $this->headRow(3, '6001', ['services' => 'EDA8 EDA9']),
         ]);
 
-        $this->assertSame(0, $result['counts']['blocking']);
-        $service = $this->errorsFor($result, 'SERVICE');
-        $this->assertCount(1, $service);
-        $this->assertSame('warning', $service[0]['severity']);
-        $this->assertStringContainsString('XX9', $service[0]['message']);
-        // The known token still imports.
-        $this->assertSame([80], $result['families'][0]['headServiceIds']);
+        $this->assertSame(1, $result['counts']['blocking']);
+        $this->assertSame('SERVICE', $this->errorsFor($result, 'SERVICE')[0]['code']);
+        $this->assertStringContainsString('EDA8EDA9', $this->errorsFor($result, 'SERVICE')[0]['message']);
+        $this->assertSame([], $result['families'][0]['headServiceIds']);
     }
 
-    public function testUnrecognizedSectorFallsBackToOtherWithAWarning(): void
+    public function testUnknownServiceTokenBlocksAndPreventsPartialServiceAssignment(): void
     {
         $result = $this->importerWithLookups()->validateAndBuild([
-            $this->headRow(3, '6001', ['sector' => 'ZZ9']),
+            $this->headRow(3, '6001', ['services' => 'EDA123,EDA8']),
         ]);
 
+        $this->assertSame(1, $result['counts']['blocking']);
+        $service = $this->errorsFor($result, 'SERVICE');
+        $this->assertCount(1, $service);
+        $this->assertSame('blocking', $service[0]['severity']);
+        $this->assertStringContainsString('EDA123', $service[0]['message']);
+        $this->assertSame([], $result['families'][0]['headServiceIds']);
+    }
+
+    public function testUnknownSectorTokenBlocksAndPreventsFallbackOrPartialAssignment(): void
+    {
+        $result = $this->importerWithLookups()->validateAndBuild([
+            $this->headRow(3, '6001', ['sector' => 'SC, ZZ9']),
+        ]);
+
+        $this->assertSame(1, $result['counts']['blocking']);
         $sector = $this->errorsFor($result, 'SECTOR');
         $this->assertCount(1, $sector);
-        $this->assertSame('warning', $sector[0]['severity']);
+        $this->assertSame('blocking', $sector[0]['severity']);
         $this->assertStringContainsString('ZZ9', $sector[0]['message']);
-        $this->assertStringContainsString('Other', $sector[0]['message']);
-        $this->assertSame([9], $result['families'][0]['headPayload']['sector_ids']);
+        $this->assertSame([], $result['families'][0]['headPayload']['sector_ids']);
     }
 
     public function testDeliberatelyTypedOtherSectorStaysSilent(): void
