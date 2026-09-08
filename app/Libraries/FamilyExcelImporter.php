@@ -58,13 +58,11 @@ class FamilyExcelImporter
     ];
 
     /**
-     * Curated typo variants measured in real files -> the canonical code. Anything
-     * not here is resolved by spacing/case normalisation or rejected as invalid.
+     * Service-code overrides applied before the Reference lookup. Intentional empty:
+     * codes must come from the Reference sheet; anything not listed is rejected as
+     * invalid rather than guess-repaired.
      */
     private const SERVICE_ALIASES = [
-        'ED8A' => 'EDA8',
-        'EDAI' => 'EDA8',
-        'SCI'  => 'SC1',
     ];
 
     /** @var list<array{familyNo: string, headName: string, headPayload: array, headServiceIds: int[], memberPayloads: list<array{payload: array, serviceIds: int[]}>}> */
@@ -1222,8 +1220,12 @@ class FamilyExcelImporter
             'religion'      => $religion,
             // The sheet's Barangay column resolves to barangayID below; it is no
             // longer appended to the address, which holds the street address only.
+            // The staged canonical address (uppercase, whitespace collapsed,
+            // punctuation preserved) is what the review shows, so it must also be
+            // what gets stored - re-cleaning here would strip punctuation the
+            // operator already reviewed and approved.
             'address'       => MemberFieldNormalizer::nullableText(
-                MemberFieldNormalizer::cleanAddress((string) ($data['address'] ?? ''))
+                (string) ($data['address'] ?? '')
             ),
             'barangayID'    => $this->barangayIdForHead((string) ($data['barangay'] ?? '')),
             'relationship'  => $isHead ? 'HEAD' : (MemberFieldNormalizer::nullableUpperText((string) ($data['relationship'] ?? '')) ?? 'MEMBER'),
@@ -1817,8 +1819,9 @@ class FamilyExcelImporter
     // -- lookups + helpers -----------------------------------------------------
 
     /**
-     * [UPPER shortcode => sectorID] of active sectors, with OTHERS/OTHER aliased to the
-     * catch-all sector. Cached for re-validation.
+     * [UPPER shortcode => sectorID] of active sectors. Only real reference shortcodes
+     * are mapped - unknown tokens are rejected rather than filed under Other. Cached
+     * for re-validation.
      */
     private function sectorCodeMap(): array
     {
@@ -1826,26 +1829,15 @@ class FamilyExcelImporter
             return $this->sectorByCode;
         }
 
-        $map     = [];
-        $otherId = 0;
+        $map = [];
 
         foreach ((new SectorModel())->getActive() as $sector) {
             $code = strtoupper(trim((string) ($sector['shortcode'] ?? '')));
-            $name = strtoupper(trim((string) ($sector['name'] ?? '')));
             $id   = (int) ($sector['sectorID'] ?? 0);
 
             if ($code !== '' && $id > 0) {
                 $map[$code] = $id;
             }
-
-            if ($otherId === 0 && $id > 0 && (str_contains($code, 'OTHER') || str_contains($name, 'OTHER'))) {
-                $otherId = $id;
-            }
-        }
-
-        if ($otherId > 0) {
-            $map['OTHERS'] = $otherId;
-            $map['OTHER']  = $otherId;
         }
 
         return $this->sectorByCode = $map;
