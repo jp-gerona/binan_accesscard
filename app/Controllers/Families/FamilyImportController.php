@@ -481,8 +481,9 @@ class FamilyImportController extends BaseController
             }
         }
 
-        $bundle = $loaded['result'];
-        $rows   = is_array($bundle['rows'] ?? null) ? $bundle['rows'] : [];
+        $bundle   = $loaded['result'];
+        $previous = $bundle;
+        $rows     = is_array($bundle['rows'] ?? null) ? $bundle['rows'] : [];
 
         $index = null;
 
@@ -522,10 +523,9 @@ class FamilyImportController extends BaseController
         $result['changes'] = $this->appendChanges($bundle, ImportReviewChangeLog::edited([$oldRow], [$newRow]));
 
         try {
-            $this->restageReview($jobId, $result);
-        } catch (Throwable $exception) {
-            $this->auditSystemError('restaging a reviewed family import', $exception);
-
+            $this->restageReview($jobId, $result, $previous);
+        } catch (Throwable) {
+            // Review edits are not committed records and must never add audit rows.
             return $this->jsonError('The correction could not be saved. Please try again.', 500);
         }
 
@@ -564,9 +564,10 @@ class FamilyImportController extends BaseController
             return $this->jsonError('That import is no longer available to review.', 404);
         }
 
-        $keepRow = (int) ($this->request->getPost('keep_row') ?? 0);
-        $bundle  = $loaded['result'];
-        $rows    = is_array($bundle['rows'] ?? null) ? $bundle['rows'] : [];
+        $keepRow  = (int) ($this->request->getPost('keep_row') ?? 0);
+        $bundle   = $loaded['result'];
+        $previous = $bundle;
+        $rows     = is_array($bundle['rows'] ?? null) ? $bundle['rows'] : [];
         $old     = is_array($bundle['discarded'] ?? null) ? $bundle['discarded'] : [];
         $groups  = is_array($bundle['duplicateGroups'] ?? null) ? $bundle['duplicateGroups'] : [];
 
@@ -586,8 +587,8 @@ class FamilyImportController extends BaseController
         $result['changes'] = $this->appendChanges($bundle, ImportReviewChangeLog::discarded($changedRows, $keepRow));
 
         try {
-            $this->restageReview($jobId, $result);
-        } catch (Throwable $exception) {
+            $this->restageReview($jobId, $result, $previous);
+        } catch (Throwable) {
             return $this->jsonError('The duplicate decision could not be saved. Please try again.', 500);
         }
 
@@ -612,6 +613,7 @@ class FamilyImportController extends BaseController
 
         $sheetRow = (int) ($this->request->getPost('import_row') ?? 0);
         $bundle   = $loaded['result'];
+        $previous = $bundle;
         $rows     = is_array($bundle['rows'] ?? null) ? $bundle['rows'] : [];
         $old      = is_array($bundle['discarded'] ?? null) ? $bundle['discarded'] : [];
         $discarded = ImportReviewResolution::restore($old, $sheetRow);
@@ -627,8 +629,8 @@ class FamilyImportController extends BaseController
         $result['changes'] = $this->appendChanges($bundle, $entry);
 
         try {
-            $this->restageReview($jobId, $result);
-        } catch (Throwable $exception) {
+            $this->restageReview($jobId, $result, $previous);
+        } catch (Throwable) {
             return $this->jsonError('The duplicate decision could not be saved. Please try again.', 500);
         }
 
@@ -674,19 +676,40 @@ class FamilyImportController extends BaseController
      * bundle (ImportStagingStore::save()): a one-field Apply must not re-encode
      * every staged row just to flip one flag.
      */
-    private function restageReview(int $jobId, array $result): void
+    private function restageReview(int $jobId, array $result, array $previous): void
     {
         $store = service('importStaging');
+        $rows  = is_array($result['rows'] ?? null) ? $result['rows'] : [];
 
-        $store->saveRows($jobId, is_array($result['rows'] ?? null) ? $result['rows'] : []);
-        $store->saveErrors(
+        if (! $store->saveRows($jobId, $rows)) {
+            throw new \RuntimeException('The reviewed rows could not be saved.');
+        }
+
+        if ($store->saveErrors(
             $jobId,
             is_array($result['errors'] ?? null) ? $result['errors'] : [],
             is_array($result['counts'] ?? null) ? $result['counts'] : [],
             is_array($result['discarded'] ?? null) ? $result['discarded'] : [],
             is_array($result['duplicateGroups'] ?? null) ? $result['duplicateGroups'] : [],
             is_array($result['changes'] ?? null) ? $result['changes'] : [],
+        )) {
+            return;
+        }
+
+        // Rows and validation metadata occupy separate atomic files. A failed metadata
+        // write can follow a successful rows write, so restore the prior bundle before
+        // exposing the persistence error to the operator whenever the store permits it.
+        $store->saveErrors(
+            $jobId,
+            is_array($previous['errors'] ?? null) ? $previous['errors'] : [],
+            is_array($previous['counts'] ?? null) ? $previous['counts'] : [],
+            is_array($previous['discarded'] ?? null) ? $previous['discarded'] : [],
+            is_array($previous['duplicateGroups'] ?? null) ? $previous['duplicateGroups'] : [],
+            is_array($previous['changes'] ?? null) ? $previous['changes'] : [],
         );
+        $store->saveRows($jobId, is_array($previous['rows'] ?? null) ? $previous['rows'] : []);
+
+        throw new \RuntimeException('The reviewed validation result could not be saved.');
     }
 
     /**

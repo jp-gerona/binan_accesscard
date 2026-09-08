@@ -160,6 +160,50 @@ final class ImportReviewRowsTest extends CIUnitTestCase
         return ['is_logged_in' => true, 'role' => $role, 'user_id' => $userId];
     }
 
+    /**
+     * Replaces the staging service with a store that fails one persistence operation.
+     * The errors failure occurs after rows have been written, exercising review rollback.
+     */
+    private function failReviewPersistence(string $failure): void
+    {
+        $store = new class($this->stagingDir, $failure) extends ImportStagingStore {
+            public function __construct(string $dir, private string $failure)
+            {
+                parent::__construct($dir);
+            }
+
+            public function saveRows(int $jobId, array $rows): bool
+            {
+                if ($this->failure === 'throw') {
+                    throw new \RuntimeException('Rows staging failed.');
+                }
+
+                if ($this->failure === 'rows') {
+                    return false;
+                }
+
+                return parent::saveRows($jobId, $rows);
+            }
+
+            public function saveErrors(
+                int $jobId,
+                array $errors,
+                array $counts,
+                array $discarded,
+                array $duplicateGroups,
+                array $changes,
+            ): bool {
+                if ($this->failure === 'errors') {
+                    return false;
+                }
+
+                return parent::saveErrors($jobId, $errors, $counts, $discarded, $duplicateGroups, $changes);
+            }
+        };
+
+        \CodeIgniter\Config\Services::injectMock('importStaging', $store);
+    }
+
     public function testItReturnsTheFirstPageOfRows(): void
     {
         $userId = $this->encoder();
@@ -264,6 +308,49 @@ final class ImportReviewRowsTest extends CIUnitTestCase
 
         $result->assertStatus(200);
         $this->assertSame('ANA MARIA', service('importStaging')->load($jobId)['rows'][3]['data']['firstname']);
+    }
+
+    public function testApplyPersistenceExceptionDoesNotWriteAnAuditRow(): void
+    {
+        $userId = $this->encoder();
+        $jobId  = $this->stageJob($userId);
+        $this->failReviewPersistence('throw');
+
+        $result = $this->withSession($this->session($userId))
+            ->post('records/import/review/' . $jobId . '/apply', [
+                'import_row' => 6,
+                'fields'     => ['sex' => 'Female'],
+            ]);
+
+        $result->assertStatus(500);
+        $this->assertSame(0, db_connect()->table('audit_trails')->where('user_action', 'SYSTEM_ERROR')->countAllResults());
+    }
+
+    /** @dataProvider failedReviewPersistence */
+    public function testApplyReportsAndPreservesTheStageOnPersistenceFailure(string $failure): void
+    {
+        $userId = $this->encoder();
+        $jobId  = $this->stageJob($userId);
+        $before = service('importStaging')->load($jobId);
+        $this->failReviewPersistence($failure);
+
+        $result = $this->withSession($this->session($userId))
+            ->post('records/import/review/' . $jobId . '/apply', [
+                'import_row' => 6,
+                'fields'     => ['sex' => 'Female'],
+            ]);
+
+        $result->assertStatus(500);
+        $this->assertSame($before, service('importStaging')->load($jobId));
+    }
+
+    /** @return array<string, array{string}> */
+    public static function failedReviewPersistence(): array
+    {
+        return [
+            'rows write fails'   => ['rows'],
+            'errors write fails' => ['errors'],
+        ];
     }
 
     public function testResolveDuplicateDiscardsTheOtherCandidateAndLogsIt(): void
