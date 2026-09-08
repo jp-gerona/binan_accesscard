@@ -4,6 +4,7 @@ namespace App\Controllers\Families;
 
 use App\Controllers\BaseController;
 use App\Libraries\DashboardPageBuilder;
+use App\Libraries\FamilyMediaStorage;
 use App\Libraries\FamilyModalDataBuilder;
 use App\Libraries\FamilyRecordSummary;
 use App\Libraries\FamilyRecordWriteException;
@@ -14,14 +15,17 @@ use App\Libraries\RoleAccess;
 use App\Libraries\SectorIds;
 use App\Models\Audit\AuditTrailsModel;
 use App\Models\Families\FamilyFormOptionsModel;
+use App\Models\Families\FamilyMediaModel;
 use App\Models\Families\MemberModel;
 use App\Models\Families\MemberSectorModel;
 use App\Models\Families\MemberServiceModel;
+use App\Models\Jobs\JobQueueModel;
 use App\Models\Lookups\BarangayModel;
 use App\Models\Lookups\SectorModel;
 use App\Models\Lookups\ServiceModel;
 use App\Support\FamilyAgeEligibility;
 use App\Support\MemberFieldNormalizer;
+use CodeIgniter\HTTP\Files\UploadedFile;
 use CodeIgniter\HTTP\RedirectResponse;
 use CodeIgniter\HTTP\ResponseInterface;
 use Config\Navigation;
@@ -188,7 +192,7 @@ class FamilyController extends BaseController
         $memberModel->beginTransaction();
 
         try {
-            $writer->persistFamily(
+            $headId = $writer->persistFamily(
                 $this->memberPayload('head_'),
                 $memberPayloads,
                 array_map('intval', $serviceIds),
@@ -223,9 +227,14 @@ class FamilyController extends BaseController
             return $this->storeError('The family form was not saved.', 500);
         }
 
+        $mediaWarnings = $this->storeOptionalMedia($headId, $controlNo);
+
         // Set on a new record save only, never on edit/update.
         session()->setFlashdata('family_record_saved', '1');
         session()->setFlashdata('success', $successMessage);
+        if ($mediaWarnings !== []) {
+            session()->setFlashdata('warning', implode(' ', $mediaWarnings));
+        }
 
         if ($this->request->isAJAX()) {
             // The Data Entry page always posts through fetch(), so this is the only
@@ -234,8 +243,9 @@ class FamilyController extends BaseController
             return $this->response->setJSON([
                 'status'   => 'success',
                 'message'  => $successMessage,
-                'redirect' => site_url('records'),
-                'csrf'     => csrf_hash(),
+                'redirect'      => site_url('records'),
+                'mediaWarnings' => $mediaWarnings,
+                'csrf'          => csrf_hash(),
             ]);
         }
 
@@ -261,6 +271,8 @@ class FamilyController extends BaseController
 
         helper('dashboard_view_helper');
 
+        $media = $this->familyMediaForProfile($role, $headId);
+
         return view('layout', DashboardPageBuilder::shellAccountData() + [
             'activePage' => 'records-profile',
             'role'       => $role,
@@ -270,8 +282,44 @@ class FamilyController extends BaseController
                 'head'    => $summary->head($context['head'], $context['controlNumber']),
                 'members' => $summary->members($context['members']),
                 'canEdit' => in_array($role, Navigation::pageRoles('records-edit'), true),
+                'media'   => $media,
             ]),
         ]);
+    }
+
+    /**
+     * The private media URLs for a record's read profile, or two nulls when the
+     * session's role may not view family media. URLs come from the linked
+     * registry rows (`media_url`) and stay relative; the view turns them into
+     * usable src attributes. Members who are not heads already have no linked
+     * rows, so a head-id check is implicit in the query.
+     *
+     * @return array{photo: ?string, signature: ?string}
+     */
+    private function familyMediaForProfile(string $role, int $headId): array
+    {
+        if (! in_array($role, Navigation::pageRoles('records-media'), true)) {
+            return ['photo' => null, 'signature' => null];
+        }
+
+        $media = new FamilyMediaModel();
+
+        return [
+            'photo'     => $this->linkedMediaUrl($media->findLinked($headId, FamilyMediaModel::KIND_PHOTO)),
+            'signature' => $this->linkedMediaUrl($media->findLinked($headId, FamilyMediaModel::KIND_SIGNATURE)),
+        ];
+    }
+
+    /** The private relative URL a linked media row stores, or null when blank. */
+    private function linkedMediaUrl(?array $row): ?string
+    {
+        if ($row === null) {
+            return null;
+        }
+
+        $url = trim((string) ($row['media_url'] ?? ''));
+
+        return $url === '' ? null : $url;
     }
 
     /**
@@ -568,16 +616,21 @@ class FamilyController extends BaseController
             return $this->failUpdate('The family record was not updated.', 500);
         }
 
+        $mediaWarnings = $this->storeOptionalMedia($headId, $controlNo);
         $successMessage = 'Family record updated successfully.';
 
         session()->setFlashdata('success', $successMessage);
+        if ($mediaWarnings !== []) {
+            session()->setFlashdata('warning', implode(' ', $mediaWarnings));
+        }
 
         if ($this->request->isAJAX()) {
             return $this->response->setJSON([
                 'status'   => 'success',
                 'message'  => $successMessage,
-                'redirect' => site_url('records/' . $headId),
-                'csrf'     => csrf_hash(),
+                'redirect'      => site_url('records/' . $headId),
+                'mediaWarnings' => $mediaWarnings,
+                'csrf'          => csrf_hash(),
             ]);
         }
 
@@ -843,6 +896,66 @@ class FamilyController extends BaseController
         }
 
         return redirect()->back()->withInput()->with('error', $message);
+    }
+
+    /**
+     * Stores optional head media only after the family transaction commits, then
+     * asks the same deduplicated reconciliation queue used for folder scans to
+     * link the canonical files. Media errors are warnings because the family save
+     * has already succeeded and must not be rolled back.
+     *
+     * @return list<string>
+     */
+    private function storeOptionalMedia(int $headId, int $controlNo): array
+    {
+        if ($headId <= 0 || $controlNo <= 0) {
+            return ['The optional media could not be uploaded.'];
+        }
+
+        $uploads = [
+            'head_photo' => [FamilyMediaModel::KIND_PHOTO, 'portrait photo'],
+            'head_signature' => [FamilyMediaModel::KIND_SIGNATURE, 'signature'],
+        ];
+        $storage = new FamilyMediaStorage();
+        $warnings = [];
+        $stored = false;
+
+        foreach ($uploads as $field => [$kind, $label]) {
+            $file = $this->request->getFile($field);
+
+            if (! $file instanceof UploadedFile || ! $file->isValid()) {
+                continue;
+            }
+
+            try {
+                if ($storage->storeUpload($file, $controlNo, $kind) === []) {
+                    $warnings[] = 'The optional ' . $label . ' could not be uploaded.';
+
+                    continue;
+                }
+
+                $stored = true;
+            } catch (Throwable) {
+                $warnings[] = 'The optional ' . $label . ' could not be uploaded.';
+            }
+        }
+
+        if (! $stored) {
+            return $warnings;
+        }
+
+        try {
+            $queue = new JobQueueModel();
+            if (! $queue->hasTable()) {
+                $warnings[] = 'The optional media was saved but could not be linked yet.';
+            } else {
+                $queue->enqueueIfNoActive('media_reconcile', []);
+            }
+        } catch (Throwable) {
+            $warnings[] = 'The optional media was saved but could not be linked yet.';
+        }
+
+        return $warnings;
     }
 
     /**

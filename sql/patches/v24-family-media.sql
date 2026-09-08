@@ -1,0 +1,20 @@
+CREATE TABLE `family_media` (
+  `mediaID` int(11) NOT NULL AUTO_INCREMENT,
+  `headID` int(11) DEFAULT NULL,
+  `kind` enum('photo','signature') NOT NULL,
+  `source_control_no` int(11) NOT NULL,
+  `source_filename` varchar(255) NOT NULL,
+  `media_url` varchar(255) DEFAULT NULL,
+  `content_sha256` char(64) DEFAULT NULL,
+  `byte_size` int(11) DEFAULT NULL,
+  `source_modified_at` datetime DEFAULT NULL,
+  `state` enum('pending','linked','invalid','missing') NOT NULL DEFAULT 'pending',
+  `last_seen_at` datetime DEFAULT NULL,
+  `dt_created` timestamp NOT NULL DEFAULT current_timestamp(),
+  `dt_updated` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`mediaID`),
+  UNIQUE KEY `uq_family_media_source` (`source_filename`),
+  UNIQUE KEY `uq_family_media_head_kind` (`headID`,`kind`),
+  KEY `idx_family_media_state` (`state`,`last_seen_at`),
+  CONSTRAINT `fk_family_media_head` FOREIGN KEY (`headID`) REFERENCES `member` (`memberID`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;

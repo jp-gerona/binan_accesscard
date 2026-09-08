@@ -74,3 +74,10 @@ session.driver = 'CodeIgniter\Session\Handlers\FileHandler'
 #--------------------------------------------------------------------
 
 # logger.threshold = 4
+
+#--------------------------------------------------------------------
+# LOCAL FAMILY MEDIA
+#
+# This must be an absolute directory outside this project, public/, and writable/.
+# familymediasettings.root = '/var/lib/binan-accesscard-media'
+#--------------------------------------------------------------------

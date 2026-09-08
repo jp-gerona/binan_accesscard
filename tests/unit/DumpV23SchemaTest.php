@@ -6,7 +6,7 @@ use CodeIgniter\Test\CIUnitTestCase;
 use Tests\Support\Database\DumpSchema;
 
 /**
- * Pins the V21 batch schedule columns and the V22 normalization, carried into V23, to the dump.
+ * Pins the V21 batch schedule columns and the V22 normalization, carried into V24, to the dump.
  *
  * The dump is the schema source of truth and there are no migrations, so a
  * column that never made it into the dump would still pass every test that
@@ -58,9 +58,9 @@ final class DumpV23SchemaTest extends CIUnitTestCase
         );
     }
 
-    public function testDumpIsV23(): void
+    public function testDumpIsV24(): void
     {
-        $this->assertStringEndsWith('accesscardV23.sql', (string) DumpSchema::dumpPath());
+        $this->assertStringEndsWith('accesscardV24.sql', (string) DumpSchema::dumpPath());
     }
 
     /** The CREATE TABLE body for one table, so a column name shared with another cannot pass for it. */

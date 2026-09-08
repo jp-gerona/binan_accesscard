@@ -15,6 +15,11 @@ $head = (array) ($head ?? []);
 $members = (array) ($members ?? []);
 $canEdit = (bool) ($canEdit ?? false);
 $headId = (int) ($headId ?? 0);
+$media = (array) ($media ?? []);
+$mediaPhoto = is_string($media['photo'] ?? null) ? $media['photo'] : null;
+$mediaSignature = is_string($media['signature'] ?? null) ? $media['signature'] : null;
+$hasMedia = $mediaPhoto !== null || $mediaSignature !== null;
+$mediaName = (string) ($head['name'] ?? '');
 
 /** Prints one label/value pair as a ticket-style column. */
 $field = static function (array $entry): string {
@@ -54,6 +59,32 @@ $list = static function (string $title, array $items): string {
             <?php endif; ?>
         </div>
     </div>
+
+    <?php if ($hasMedia): ?>
+    <div class="card shadow-none border mb-4">
+        <div class="card-header bg-white border-bottom py-3">
+            <h3 class="h6 mb-0 fw-bold text-dark"><i class="bi bi-images me-2 text-muted"></i>Family Media</h3>
+        </div>
+        <div class="card-body p-4">
+            <div class="d-flex flex-wrap align-items-start gap-4">
+                <?php if ($mediaPhoto !== null): ?>
+                    <figure class="mb-0">
+                        <img src="<?= esc(site_url($mediaPhoto), 'attr') ?>"
+                             alt="<?= esc($mediaName === '' ? 'Head portrait' : 'Portrait of ' . $mediaName, 'attr') ?>"
+                             class="img-thumbnail img-fluid">
+                    </figure>
+                <?php endif; ?>
+                <?php if ($mediaSignature !== null): ?>
+                    <figure class="mb-0">
+                        <img src="<?= esc(site_url($mediaSignature), 'attr') ?>"
+                             alt=""
+                             class="img-thumbnail img-fluid">
+                    </figure>
+                <?php endif; ?>
+            </div>
+        </div>
+    </div>
+    <?php endif; ?>
 
     <div class="card shadow-none border mb-4">
         <div class="card-header bg-white border-bottom py-3 d-flex flex-wrap align-items-center gap-3">

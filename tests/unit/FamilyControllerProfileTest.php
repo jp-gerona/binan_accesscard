@@ -198,4 +198,84 @@ final class FamilyControllerProfileTest extends CIUnitTestCase
 
         $this->assertArrayNotHasKey('qr', $json);
     }
+
+    public function testViewerProfileOmitsLinkedMediaUrls(): void
+    {
+        $db = db_connect();
+
+        $userId = $this->user('viewer');
+
+        $db->table('member')->insert([
+            'memberID' => 7, 'lastname' => 'DELA CRUZ', 'firstname' => 'JUAN',
+            'middlename' => '', 'headID' => 7, 'salary' => 0,
+        ]);
+        $this->linkMedia(7, 'photo', '019186.photo.jpg', 19186);
+
+        $session = [
+            'is_logged_in' => true,
+            'role'         => 'viewer',
+            'user_id'      => $userId,
+        ];
+
+        $profile = $this->withSession($session)->get('records/7');
+        $profile->assertStatus(200);
+
+        $html = (string) $profile->response()->getBody();
+        $this->assertStringNotContainsString('Family Media', $html, 'A Viewer must not see the media panel.');
+        $this->assertStringNotContainsString('records/7/media/photo', $html, 'A Viewer must not receive private media URLs.');
+    }
+
+    public function testEncoderProfileRendersLinkedMediaUrls(): void
+    {
+        $db = db_connect();
+
+        $userId = $this->user('encoder');
+
+        $db->table('member')->insert([
+            'memberID' => 7, 'lastname' => 'DELA CRUZ', 'firstname' => 'JUAN',
+            'middlename' => '', 'headID' => 7, 'salary' => 0,
+        ]);
+        $this->linkMedia(7, 'photo', '019186.photo.jpg', 19186);
+
+        $session = [
+            'is_logged_in' => true,
+            'role'         => 'encoder',
+            'user_id'      => $userId,
+        ];
+
+        $profile = $this->withSession($session)->get('records/7');
+        $profile->assertStatus(200);
+
+        $html = html_entity_decode((string) $profile->response()->getBody(), ENT_QUOTES | ENT_HTML5);
+        $this->assertStringContainsString('Family Media', $html);
+        $this->assertStringContainsString('records/7/media/photo', $html);
+        $this->assertMatchesRegularExpression(
+            '/<img[^>]*src="[^"]*records\/7\/media\/photo[^"]*"[^>]*alt="Portrait of JUAN DELA CRUZ"/',
+            $html
+        );
+
+        // Editors never see a raw storage path, only the private route URL.
+        $this->assertStringNotContainsString('019186.photo.jpg', $html);
+    }
+
+    /**
+     * Seeds a linked family-media registry row for the profile page to surface.
+     * The controller only reads `media_url` for the view, so no file is needed.
+     */
+    private function linkMedia(int $headId, string $kind, string $filename, int $controlNo): void
+    {
+        $mediaModel = new \App\Models\Families\FamilyMediaModel();
+        $mediaId = $mediaModel->upsertPending([
+            'source_control_no' => $controlNo,
+            'source_filename'   => $filename,
+            'kind'              => $kind,
+        ]);
+        $this->assertGreaterThan(0, $mediaId);
+        $this->assertTrue($mediaModel->link(
+            $mediaId,
+            $headId,
+            'records/' . $headId . '/media/' . $kind,
+            ['content_sha256' => str_repeat('a', 64), 'byte_size' => 123, 'source_modified_at' => '2026-09-08 10:00:00']
+        ));
+    }
 }
