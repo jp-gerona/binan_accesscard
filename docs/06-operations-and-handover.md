@@ -20,6 +20,10 @@ replaceable from git; the database is not replaceable from anywhere.
 A **background worker process** that drains a job queue. If it is not running,
 large imports never finish, and they fail silently rather than loudly.
 
+A **private family-media root** outside this checkout. It holds the source
+portrait and signature files. The database records their registry and
+association, but not their image bytes.
+
 ## Deploying
 
 Point the web server at `public/`, never at the repository root. CodeIgniter's
@@ -41,6 +45,41 @@ written. The fields that differ from a development setup:
 full stack traces on error, including file paths and query fragments. That is
 exactly what you want while building and exactly what you do not want on a
 machine other people reach.
+
+### Configure private family media
+
+Create a folder that both application accounts can reach. The web account that
+runs PHP writes uploads synchronously when a family is saved, and the scheduled
+worker account scans the same folder, so a deployment that splits the two across
+separate accounts needs a shared group with group-write on the directory and
+stored files made group-readable. Running both processes under one account is
+simpler and also works.
+
+For a Linux deployment whose worker account is `binan-worker` and whose PHP
+account is `www-data`, put both accounts in a shared `binan-media` group and make
+the directory group-owned and group-writable with the setgid bit, so files the
+web account creates inherit the shared group:
+
+```bash
+sudo groupadd --system binan-media
+sudo usermod -a -G binan-media binan-worker
+sudo usermod -a -G binan-media www-data
+sudo install -d -o binan-worker -g binan-media -m 2770 /var/lib/binan-accesscard-media
+```
+
+Set the corresponding `.env` value, using an absolute local path:
+
+```ini
+familymediasettings.root = '/var/lib/binan-accesscard-media'
+```
+
+This handbook calls that configured folder `MEDIA_ROOT` in shell commands; it is
+not a second application setting. The storage boundary writes uploaded files at
+group-readable `0640`, and the setgid directory above keeps their group set to
+`binan-media`, so the worker account can read what the web account saved. Keep
+the folder outside anything the web server serves directly. Restart the PHP
+service after changing group membership, then install the worker at its default
+one-minute schedule as described in chapter 05.
 
 The database account needs `SELECT`, `INSERT`, `UPDATE`, and `DELETE` on the
 `accesscard` database. It does not need `DROP`, and it does not need access to
@@ -72,6 +111,30 @@ Restoring is importing that file:
 mysql -u<user> -p accesscard < accesscard-2026-08-14.sql
 ```
 
+Family media is a second part of the same record set. Back up the configured
+`MEDIA_ROOT` at the same time as the MySQL dump and label both files with the
+same backup date or snapshot identifier:
+
+```bash
+MEDIA_ROOT=/var/lib/binan-accesscard-media
+BACKUP_DATE=$(date +%F)
+mysqldump -u<user> -p accesscard > "accesscard-${BACKUP_DATE}.sql"
+tar -C "$(dirname "$MEDIA_ROOT")" -czf "media-root-${BACKUP_DATE}.tar.gz" "$(basename "$MEDIA_ROOT")"
+```
+
+Restore the MySQL dump and its matching media archive together. For example,
+restore `accesscard-2026-08-14.sql` only with
+`media-root-2026-08-14.tar.gz`, after stopping the worker:
+
+```bash
+mysql -u<user> -p accesscard < accesscard-2026-08-14.sql
+tar -C /var/lib -xzf media-root-2026-08-14.tar.gz
+```
+
+Do not restore MySQL and `MEDIA_ROOT` from different backup points. The
+`family_media` registry in MySQL names files in that root, so a mismatched restore
+can point records at absent or wrong media.
+
 **A dump is a file containing the personal details of every family the office
 serves**, including minors, and it carries no protection of its own. Treat it
 accordingly: write it somewhere only the backup operator can read, encrypt it at
@@ -102,9 +165,9 @@ for a deployment:
 - The worker must be running, on a schedule, for imports to complete. Every
   minute is the default and is fine.
 - Run it as a dedicated least-privilege account, not as SYSTEM or root. It needs
-  read and write on `writable/` and `writable/uploads/`, and network access to
-  MySQL. Nothing else. It parses untrusted uploaded files, which is the whole
-  reason for the constraint.
+  read and write on `writable/`, `writable/uploads/`, and the configured private
+  `MEDIA_ROOT`, plus network access to MySQL. Nothing else. It parses untrusted
+  uploaded files, which is the whole reason for the constraint.
 - Its log is `writable/logs/queue-worker.log`. If imports stop completing, read it
   first.
 - On a Windows laptop, Scheduled Tasks skip while on battery unless configured
@@ -150,12 +213,13 @@ a review.
 
 ## Handing it on
 
-Whoever takes this next needs four things: the repository, the current `.env`
-values (not the file, the values), a recent database dump, and the credentials to
-the machine it runs on. Everything else in this handbook is reconstructable from
-the code.
+Whoever takes this next needs five things: the repository, the current `.env`
+values (not the file, the values), a recent matched MySQL and `MEDIA_ROOT`
+backup pair, the media-root path and worker account, and the credentials to the
+machine it runs on. Everything else in this handbook is reconstructable from the
+code.
 
-Three of those four are secrets, so hand them over as secrets. Use a password
+The secrets among those five must travel as secrets. Use a password
 manager or secret store that both parties already have, or an encrypted archive
 whose passphrase travels by a different channel. Not email, not chat, not a
 shared folder, not a document in the repository.

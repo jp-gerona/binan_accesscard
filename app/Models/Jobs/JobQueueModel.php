@@ -171,6 +171,37 @@ class JobQueueModel
         ]);
     }
 
+    /** True when a job of this type is still pending or being processed. */
+    public function hasActiveType(string $type): bool
+    {
+        if ($type === '') {
+            return false;
+        }
+
+        return $this->db->table('job_queue')
+            ->where('type', $type)
+            ->whereIn('status', ['pending', 'processing'])
+            ->countAllResults() > 0;
+    }
+
+    /**
+     * Enqueues a job only when no job of this type is pending or processing.
+     * Returns the new jobID, or null when an active job already exists. Used by
+     * the media reconcile producer so an every-minute scheduler fire never stacks
+     * another reconciliation run on top of a slow one.
+     *
+     * @param string               $type
+     * @param array<string, mixed> $payload
+     */
+    public function enqueueIfNoActive(string $type, array $payload, int $maxAttempts = 1): ?int
+    {
+        if ($this->hasActiveType($type)) {
+            return null;
+        }
+
+        return $this->enqueue($type, $payload, 0, null, null, $maxAttempts);
+    }
+
     /**
      * IDs of a user's family imports still parked on the review screen - staged, never
      * committed or cancelled. Uploading a new file retires these (see

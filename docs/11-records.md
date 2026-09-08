@@ -93,6 +93,49 @@ can be restored with its history intact, and its audit trail keeps resolving.
 and `store` for creation, `profile` and `edit` for viewing and editing, `update`,
 `archive`, and `restore`.
 
+## Family portraits and signatures
+
+The office can maintain a portrait and signature directly in the private folder
+configured as `familymediasettings.root`, called `MEDIA_ROOT` in the commands in
+this handbook. The direct-folder convention is exact:
+
+```text
+019186.photo.jpg
+019186.signature.png
+```
+
+The six digits are the zero-padded control number. A portrait is a JPEG and a
+signature is a PNG. Copy files into `MEDIA_ROOT` with their final names, for
+example:
+
+```bash
+cp /secure-intake/019186.photo.jpg "$MEDIA_ROOT/019186.photo.jpg"
+cp /secure-intake/019186.signature.png "$MEDIA_ROOT/019186.signature.png"
+```
+
+Files may arrive before or after the Excel import creates the family and its
+control number. If `019186.photo.jpg` arrives first, the next shared-worker scan
+records it as pending. It remains pending and is not deleted while no imported
+head resolves control number `19186`. Once that head exists, the next scan links
+it and an Encoder, Admin, or Developer can see it on the family profile.
+
+The one-minute scheduled worker queues and performs this reconciliation
+automatically. There is no page to press and no filesystem watcher to install.
+The worker scans the root, records only valid canonical image files, and leaves
+invalid source files in the folder for staff to correct. Correct the filename,
+format, dimensions, or size in place and let the next scan inspect it again.
+
+The folder is the source of truth. Replace a portrait by copying a replacement
+JPEG over `019186.photo.jpg`; the next scan updates the registry and writes a
+media replacement row on the audit page. Delete that file directly; the next scan
+marks it missing, removes its availability from the profile, and writes a media
+removal row. Do not expect the profile to retain a deleted source file.
+
+Media is delivered only through the protected family route, not as a public file
+URL. Viewer accounts receive a 404 for a direct media URL and their profile shows
+no media panel. Chapter 05 explains the worker schedule, and chapter 06 covers
+folder permissions and matched backups.
+
 ## The Data Completeness queue
 
 Records are not always complete on the first pass. An Excel import (chapter 12)

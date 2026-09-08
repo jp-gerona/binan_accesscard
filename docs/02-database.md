@@ -1,6 +1,6 @@
 # Database
 
-Seventeen tables in MySQL. The schema is defined by `accesscardV23.sql`, checked
+Eighteen tables in MySQL. The schema is defined by `accesscardV24.sql`, checked
 into the repository root, and that file is the authority. There are no
 CodeIgniter migrations and there never will be; the reasoning is at the bottom of
 this chapter.
@@ -20,6 +20,7 @@ erDiagram
     member ||--o| qr_control : "issued"
     users ||--o{ qr_control : "generated"
     member ||--o{ audit_trails : "changed"
+    member ||--o{ family_media : "has linked media"
     users ||--o{ audit_trails : "by"
     subsidy ||--o{ distribution_batch : "hands out"
     distribution_batch ||--o{ batch_barangay : "targets"
@@ -115,6 +116,13 @@ erDiagram
         int batch_id FK
         int userID FK "null when the scanning account has no users row"
         timestamp dt_voided
+    }
+    family_media {
+        int mediaID PK
+        int headID FK "null while pending"
+        enum kind "photo, signature"
+        varchar source_filename "unique direct-folder filename"
+        enum state "pending, linked, invalid, missing"
     }
     job_queue {
         int jobID PK
@@ -227,6 +235,17 @@ longer description, the IP address and user agent, the acting `userID`, and the
 JSON `payload`, a status, progress counters, a checkpoint for resuming, a result
 blob, and locking columns. Chapter 05 covers the worker.
 
+**`family_media`** is the V24 registry for family portraits and signatures. It
+stores the linked family head when known, the source control number and filename,
+the kind, state, private application URL, and the fingerprint needed to notice a
+change. It is not a BLOB column and it does not contain image bytes. The JPEG or
+PNG remains in the private external folder configured by
+`familymediasettings.root`; the one-minute worker reconciles that folder into
+this table. A row can be pending before its control number resolves to an
+imported head, linked when it is available, or missing after direct source-file
+deletion. Chapter 11 gives the operator workflow and chapter 06 covers matched
+MySQL and media-root backup restoration.
+
 ## Why there are no migrations
 
 The database belongs to the CSWD deployment, not to this repository. It is
@@ -260,6 +279,7 @@ through:
 | `v22-normalize.sql` | added `member_sectors`, grouped services by key |
 | `v22-normalize-drop.sql` | dropped the old columns, run last |
 | `v23-add-iw-sector.sql` | added the `IW` (Informal Worker) sector row |
+| `v24-family-media.sql` | added the `family_media` registry for private external media files |
 
 Order within a version matters. Backfills run before the constraints that depend
 on them, and `v22-normalize-drop.sql` runs only after the commands that read the
@@ -334,7 +354,7 @@ Pattern notes:
 ### Rule 4: Schema truth is the SQL dump - non-negotiable
 
 - **No migrations, ever.** Schema source of truth is the current dump,
-  `accesscardV23.sql`. Never alter schema in code.
+  `accesscardV24.sql`. Never alter schema in code.
 - Column names, allowed enum values, and role names match the dump exactly.
   Enum values are case-sensitive in practice: `sex` is `in_list[MALE,FEMALE]`
   (`app/Models/Families/MemberModel.php:29`), not `[Male,Female]`.

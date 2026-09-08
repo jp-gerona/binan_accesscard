@@ -82,6 +82,13 @@ final class NavigationManifestTest extends CIUnitTestCase
         $this->assertSame('records/completeness', $links[0]['route']);
     }
 
+    public function testRecordsMediaIsUnlistedForEditorsAndHangsOffRecords(): void
+    {
+        $this->assertSame(['Developer', 'Admin', 'Encoder'], Navigation::pageRoles('records-media'));
+        $this->assertSame('records', Navigation::parentFor('records-media'));
+        $this->assertNotContains('records-media', array_column(Navigation::LINKS, 'key'));
+    }
+
     public function testEveryUnlistedPageDeclaresAParent(): void
     {
         foreach (array_keys(Navigation::UNLISTED) as $key) {

@@ -71,6 +71,8 @@ $routes->group('records', ['filter' => 'roleNav:records-completeness'], static f
 $routes->get('records/(:num)', 'Families\FamilyController::profile/$1', ['filter' => 'roleNav:records-profile']);
 $routes->get('records/(:num)/edit', 'Families\FamilyController::edit/$1', ['filter' => 'roleNav:records-edit']);
 
+$routes->get('records/(:num)/media/(:alpha)', 'Families\FamilyMediaController::show/$1/$2', ['filter' => 'roleNav:records-media']);
+
 $routes->group('records', ['filter' => 'roleNav:records-update'], static function (RouteCollection $routes): void {
     $routes->post('(:num)/update', 'Families\FamilyController::update/$1');
     $routes->post('(:num)/archive', 'Families\FamilyController::archive/$1');

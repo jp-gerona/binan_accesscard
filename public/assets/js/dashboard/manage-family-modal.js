@@ -1413,9 +1413,12 @@
         }
     }
 
-    function showFamilyToast(message, isError) {
+    function showFamilyToast(message, isError, variant) {
         var toast = document.createElement('div');
-        toast.className = 'alert ' + (isError ? 'alert-danger' : 'alert-success') + ' family-toast shadow';
+        var alertClass = variant === 'warning'
+            ? 'alert-warning'
+            : (isError ? 'alert-danger' : 'alert-success');
+        toast.className = 'alert ' + alertClass + ' family-toast shadow';
         toast.setAttribute('role', 'status');
         toast.textContent = message;
         document.body.appendChild(toast);
@@ -1641,17 +1644,32 @@
             updateCsrf(form, data.csrf);
 
             if (result.ok && data.status === 'success') {
+                var mediaWarnings = Array.isArray(data.mediaWarnings)
+                    ? data.mediaWarnings.filter(function (warning) {
+                        return typeof warning === 'string' && warning.trim() !== '';
+                    })
+                    : [];
+                var mediaWarningMessage = mediaWarnings.join(' ');
+
                 if (isCreateForm(root)) {
                     clearDraft();
                 }
 
                 // The Data Entry page (records/entry) is a full navigation, not a modal
                 // load: `redirect` is only ever set on that response (store()'s AJAX
-                // branch), so following it is the page's only completion path. The
-                // just-saved record's flash message renders after the navigation, on
-                // the page `redirect` points to.
+                // branch), so following it is the page's only completion path. Keep an
+                // optional-media warning visible long enough for the Encoder to read it
+                // before navigating; the redirect target also renders the warning flash
+                // for the non-AJAX and post-navigation paths.
                 if (data.redirect) {
-                    window.location.href = data.redirect;
+                    if (mediaWarningMessage) {
+                        showFamilyToast(mediaWarningMessage, false, 'warning');
+                        window.setTimeout(function () {
+                            window.location.href = data.redirect;
+                        }, 3200);
+                    } else {
+                        window.location.href = data.redirect;
+                    }
                     return;
                 }
 
@@ -1661,7 +1679,11 @@
                     window.reloadFamilyDataTable();
                 }
 
-                showFamilyToast(data.message || 'Family record saved successfully.', false);
+                showFamilyToast(
+                    mediaWarningMessage || data.message || 'Family record saved successfully.',
+                    false,
+                    mediaWarningMessage ? 'warning' : undefined
+                );
                 return;
             }
 

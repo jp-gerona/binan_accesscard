@@ -26,7 +26,7 @@ $qrDataUri = (string) ($qrDataUri ?? '');
 $controlNumberLabel = ControlNumber::format((int) ($controlNumber ?? 0));
 ?>
 <div class="pb-5 mb-5" data-family-entry-form>
-    <form method="post" action="<?= esc(site_url('records/' . $headId . '/update'), 'attr') ?>">
+    <form method="post" action="<?= esc(site_url('records/' . $headId . '/update'), 'attr') ?>" enctype="multipart/form-data">
         <?= csrf_field() ?>
         <input type="hidden" name="form_mode" value="update">
 
@@ -46,6 +46,9 @@ $controlNumberLabel = ControlNumber::format((int) ($controlNumber ?? 0));
                     'formOptions' => $formOptions,
                     'qrDataUri'   => $qrDataUri ?? '',
                 ]) ?>
+                <?php if (! $readOnly): ?>
+                    <?= view('Family/_media_fields') ?>
+                <?php endif; ?>
             </div>
 
         </div>
