@@ -97,19 +97,21 @@ final class FamilyExcelTemplateTest extends CIUnitTestCase
         $formula = (string) $this->familiesSheet()->getCell('S3')->getValue();
 
         // The distinct-count idioms in the Check formula divide by a COUNTIFS whose
-        // criteria pairs must mirror the SAME ranges they count over. Scalar criteria
-        // ("$A3" / "Head" / "$A3" + current address) leave a 0 denominator for
-        // differently-named members and trailing blank rows, which real Excel turns
-        // into #DIV/0! for the whole column.
+        // criteria pairs must mirror the SAME ranges they count over AND append the
+        // &"" sentinel to every criteria range. Excel counts an empty cell as equal
+        // to 0, not to blank, so without the sentinel a blank array position gives a
+        // 0 denominator while the numerator is 0 and real Excel turns that into
+        // #DIV/0! for the whole column. The sentinel coerces empty criteria to ""
+        // which matches blank cells, keeping every denominator >= 1.
         $this->assertStringContainsString(
-            'COUNTIFS($A$3:$A$1000,$A$3:$A$1000,$B$3:$B$1000,$B$3:$B$1000,$C$3:$C$1000,$C$3:$C$1000,$D$3:$D$1000,$D$3:$D$1000)',
+            'COUNTIFS($A$3:$A$1000,$A$3:$A$1000&"",$B$3:$B$1000,$B$3:$B$1000&"",$C$3:$C$1000,$C$3:$C$1000&"",$D$3:$D$1000,$D$3:$D$1000&"")',
             $formula,
-            'head-identity denominator must mirror the A/B/C/D ranges'
+            'head-identity denominator must mirror the A/B/C/D ranges with the &"" sentinel'
         );
         $this->assertStringContainsString(
-            'COUNTIFS($A$3:$A$1000,$A$3:$A$1000,$O$3:$O$1000,$O$3:$O$1000)',
+            'COUNTIFS($A$3:$A$1000,$A$3:$A$1000&"",$O$3:$O$1000,$O$3:$O$1000&"")',
             $formula,
-            'address denominator must mirror the A and O ranges'
+            'address denominator must mirror the A and O ranges with the &"" sentinel'
         );
         $this->assertStringNotContainsString(
             'COUNTIFS($A$3:$A$1000,$A3,$B$3:$B$1000,"Head",$C$3:$C$1000',
