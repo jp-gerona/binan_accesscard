@@ -1705,14 +1705,22 @@
                 return;
             }
 
-            showFormError(root, data.message || 'The family record could not be saved. Please review the form and try again.');
+            if (window.showToast) {
+                window.showToast(data.message || 'The family record could not be saved. Please review the form and try again.', 'danger');
+            } else {
+                showFormError(root, data.message || 'The family record could not be saved. Please review the form and try again.');
+            }
         }).catch(function () {
             if (saveButton) {
                 saveButton.disabled = false;
                 saveButton.textContent = originalLabel;
             }
 
-            showFormError(root, 'A network error occurred. Please try again.');
+            if (window.showToast) {
+                window.showToast('A network error occurred. Please try again.', 'danger');
+            } else {
+                showFormError(root, 'A network error occurred. Please try again.');
+            }
         });
     }
 

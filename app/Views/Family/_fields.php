@@ -36,6 +36,7 @@ $qrDataUri = (string) ($qrDataUri ?? '');
 // the edit page renders both in one card, which is what 'all' keeps doing.
 $part = (string) ($part ?? 'all');
 $part = in_array($part, ['head', 'members', 'all'], true) ? $part : 'all';
+$showMemberHeading = (bool) ($showMemberHeading ?? ($part === 'all'));
 
 // A head row carries headID == memberID, so either identifies it. Reading only
 // headID meant a caller that passed the head row without it (Family/profile
@@ -442,12 +443,12 @@ $renderMemberRow = static function ($index, array $m = [], bool $open = true) us
 <?php endif; ?>
 
 <?php if ($part !== 'head'): ?>
-<section<?= $part === 'all' ? ' id="section-members"' : '' ?> class="family-members-section family-person-card">
+<section<?= ($part === 'all' || $showMemberHeading) ? ' id="section-members"' : '' ?> class="family-members-section family-person-card">
     <?php /* The entry spine names this section on its step link, so the title here
              would be the same words twice; the edit page has no such label and
              keeps it. The count rides along in both. */ ?>
     <div class="d-flex flex-wrap align-items-center gap-2 mb-4 pb-3 border-bottom mt-4 pt-2">
-        <?php if ($part === 'all'): ?>
+        <?php if ($showMemberHeading): ?>
             <h3 class="h6 mb-0 fw-bold text-dark"><i class="bi bi-people-fill me-2 text-muted"></i>Family Members</h3>
         <?php endif; ?>
         <span class="badge rounded-pill text-bg-light border px-3 py-2" data-family-members-count>0 members</span>

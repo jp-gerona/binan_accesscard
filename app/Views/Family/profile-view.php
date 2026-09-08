@@ -68,18 +68,24 @@ $list = static function (string $title, array $items): string {
         <div class="card-body p-4">
             <div class="d-flex flex-wrap align-items-start gap-4">
                 <?php if ($mediaPhoto !== null): ?>
-                    <figure class="mb-0">
-                        <img src="<?= esc(site_url($mediaPhoto), 'attr') ?>"
-                             alt="<?= esc($mediaName === '' ? 'Head portrait' : 'Portrait of ' . $mediaName, 'attr') ?>"
-                             class="img-thumbnail img-fluid">
-                    </figure>
+                    <div>
+                        <div class="small text-muted text-uppercase fw-semibold mb-2" style="font-size: 0.75rem; letter-spacing: 0.5px;">Portrait</div>
+                        <figure class="mb-0">
+                            <img src="<?= esc(site_url($mediaPhoto), 'attr') ?>"
+                                 alt="<?= esc($mediaName === '' ? 'Head portrait' : 'Portrait of ' . $mediaName, 'attr') ?>"
+                                 class="img-thumbnail" style="max-height: 200px; width: auto; object-fit: contain;">
+                        </figure>
+                    </div>
                 <?php endif; ?>
                 <?php if ($mediaSignature !== null): ?>
-                    <figure class="mb-0">
-                        <img src="<?= esc(site_url($mediaSignature), 'attr') ?>"
-                             alt=""
-                             class="img-thumbnail img-fluid">
-                    </figure>
+                    <div>
+                        <div class="small text-muted text-uppercase fw-semibold mb-2" style="font-size: 0.75rem; letter-spacing: 0.5px;">Signature</div>
+                        <figure class="mb-0">
+                            <img src="<?= esc(site_url($mediaSignature), 'attr') ?>"
+                                 alt=""
+                                 class="img-thumbnail" style="max-height: 120px; width: auto; object-fit: contain;">
+                        </figure>
+                    </div>
                 <?php endif; ?>
             </div>
         </div>

@@ -910,7 +910,7 @@ class FamilyController extends BaseController
         ];
         $storage = new FamilyMediaStorage();
         $warnings = [];
-        $stored = false;
+        $storedFilenames = [];
 
         foreach ($uploads as $field => [$kind, $label]) {
             $file = $this->request->getFile($field);
@@ -920,31 +920,44 @@ class FamilyController extends BaseController
             }
 
             try {
-                if ($storage->storeUpload($file, $controlNo, $kind) === []) {
+                $inspection = $storage->storeUpload($file, $controlNo, $kind);
+                if ($inspection === []) {
                     $warnings[] = 'The optional ' . $label . ' could not be uploaded.';
 
                     continue;
                 }
 
-                $stored = true;
+                $storedFilenames[] = $inspection['source_filename'];
             } catch (Throwable) {
                 $warnings[] = 'The optional ' . $label . ' could not be uploaded.';
             }
         }
 
-        if (! $stored) {
+        if ($storedFilenames === []) {
             return $warnings;
+        }
+
+        try {
+            // Reconcile immediately so the UI reflects the change on refresh.
+            $reconciler = new \App\Libraries\FamilyMediaReconciler($storage);
+            $reconciler->resolveInboxFiles($storedFilenames);
+        } catch (Throwable) {
+            $warnings[] = 'The optional media was saved but could not be linked instantly.';
         }
 
         try {
             $queue = new JobQueueModel();
             if (! $queue->hasTable()) {
-                $warnings[] = 'The optional media was saved but could not be linked yet.';
+                if (! isset($warnings[0]) || strpos($warnings[0], 'instantly') === false) {
+                    $warnings[] = 'The optional media was saved but a background link task could not be queued.';
+                }
             } else {
                 $queue->enqueueIfNoActive('media_reconcile', []);
             }
         } catch (Throwable) {
-            $warnings[] = 'The optional media was saved but could not be linked yet.';
+            if (! isset($warnings[0]) || strpos($warnings[0], 'instantly') === false) {
+                $warnings[] = 'The optional media was saved but a background link task could not be queued.';
+            }
         }
 
         return $warnings;
@@ -1072,6 +1085,8 @@ class FamilyController extends BaseController
             'head_address' => 'required|min_length[2]|max_length[255]',
             'head_barangay' => 'required|max_length[100]',
             'qr_control_no' => 'required|is_natural_no_zero|less_than_equal_to[9999999]',
+            'head_photo' => 'permit_empty|is_image[head_photo]|ext_in[head_photo,jpg,jpeg]|max_size[head_photo,5120]',
+            'head_signature' => 'permit_empty|is_image[head_signature]|ext_in[head_signature,png]|max_size[head_signature,5120]',
         ];
     }
 

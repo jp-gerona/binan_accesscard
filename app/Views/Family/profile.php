@@ -37,6 +37,7 @@ $controlNumberLabel = ControlNumber::format((int) ($controlNumber ?? 0));
             </div>
             <div class="card-body">
                 <?= view('Family/_fields', [
+                    'part'        => 'head',
                     'head'        => $head,
                     'members'     => $members,
                     'readOnly'    => $readOnly,
@@ -46,9 +47,30 @@ $controlNumberLabel = ControlNumber::format((int) ($controlNumber ?? 0));
                     'formOptions' => $formOptions,
                     'qrDataUri'   => $qrDataUri ?? '',
                 ]) ?>
+
                 <?php if (! $readOnly): ?>
-                    <?= view('Family/_media_fields') ?>
+                    <section id="section-media" class="family-media-section family-person-card">
+                        <div class="family-person-card-header">
+                            <h3 class="family-person-card-title"><i class="bi bi-file-image me-2 text-muted"></i>Photo & Signature</h3>
+                        </div>
+                        <div class="mt-2">
+                            <?= view('Family/_media_fields') ?>
+                        </div>
+                    </section>
                 <?php endif; ?>
+
+                <?= view('Family/_fields', [
+                    'part'              => 'members',
+                    'showMemberHeading' => true,
+                    'head'              => $head,
+                    'members'           => $members,
+                    'readOnly'          => $readOnly,
+                    'sectors'           => $sectors,
+                    'services'          => $services,
+                    'categories'        => $categories,
+                    'formOptions'       => $formOptions,
+                    'qrDataUri'         => $qrDataUri ?? '',
+                ]) ?>
             </div>
 
         </div>

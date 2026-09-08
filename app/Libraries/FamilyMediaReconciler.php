@@ -132,6 +132,47 @@ class FamilyMediaReconciler
     }
 
     /**
+     * Resolves specific newly uploaded files immediately, bypassing the full inbox
+     * scan and the store verification pass. Called during data entry/edit so the
+     * UI can update without waiting for the cron job.
+     *
+     * @param list<string> $filenames
+     * @return array<string, int> The resulting counts
+     */
+    public function resolveInboxFiles(array $filenames): array
+    {
+        $counts = $this->emptyCounts();
+
+        if ($this->storage->root() === null) {
+            return $counts;
+        }
+
+        $known = $this->knownByFilename();
+
+        foreach ($filenames as $filename) {
+            $row = $known[$filename] ?? null;
+
+            if ($row !== null && $this->unchanged($row, $filename)) {
+                if ((string) $row['state'] === FamilyMediaModel::STATE_LINKED && (int) ($row['headID'] ?? 0) > 0) {
+                    $this->storage->moveToStore($filename, (int) $row['headID'], (string) $row['kind']);
+                } else {
+                    $this->resolve($this->fromRow($row), $row, $counts);
+                }
+            } else {
+                $inspection = $this->storage->inspect($filename);
+
+                if ($inspection === null) {
+                    $counts['invalid']++;
+                } else {
+                    $this->resolve($inspection, $row ?? null, $counts);
+                }
+            }
+        }
+
+        return $counts;
+    }
+
+    /**
      * Reconciles one inbox file into the registry. A known source filename
      * always wins over the current control lookup, so an already-linked file
      * keeps its head even after the mapping is retired. Every successful link
