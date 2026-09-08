@@ -169,8 +169,9 @@ and audit trail.
 A role-guarded route serves each kind of media for a family head. It resolves the
 linked `family_media` row, confirms the requested kind, verifies the file remains
 inside `MEDIA_ROOT`, and streams it with its declared MIME type. It returns 404
-for absent or missing media and 403 for roles without access. It never accepts a
-path from the request and it never maps a request directly onto a local filename.
+for absent or missing media and for roles without a media manifest entry. It
+never accepts a path from the request and it never maps a request directly onto
+a local filename.
 
 Family profile and access-card rendering use the stored relative URL. A card
 layout may leave a media area blank when no portrait or signature is linked. The
