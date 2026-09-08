@@ -108,4 +108,16 @@ final class FamilyProfilePageTest extends CIUnitTestCase
 
         $this->assertStringContainsString('records/7/update', $html);
     }
+
+    public function testEditableFormHasOptionalMultipartMediaInputs(): void
+    {
+        $html = $this->render();
+
+        $this->assertStringContainsString('enctype="multipart/form-data"', $html);
+        $this->assertStringContainsString('name="head_photo"', $html);
+        $this->assertStringContainsString('accept="image/jpeg"', $html);
+        $this->assertStringContainsString('name="head_signature"', $html);
+        $this->assertStringContainsString('accept="image/png"', $html);
+        $this->assertStringContainsString('(optional)', $html);
+    }
 }

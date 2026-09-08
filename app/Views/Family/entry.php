@@ -31,7 +31,7 @@ $fieldData = [
 <?php /* No bottom padding: the action bar below is sticky and full-bleed, so a
          padded container would float it above a strip of page background. */ ?>
 <div class="container-fluid px-4 pt-4 has-fixed-action-bar" data-family-entry-form>
-    <form id="familyEntryForm" method="post" action="<?= esc(site_url('records'), 'attr') ?>" novalidate>
+    <form id="familyEntryForm" method="post" action="<?= esc(site_url('records'), 'attr') ?>" enctype="multipart/form-data" novalidate>
         <?= csrf_field() ?>
 
         <nav class="stepper stepper-vertical" id="entrySpine" aria-label="Record sections">
@@ -66,6 +66,7 @@ $fieldData = [
                     </a>
                     <div class="stepper-step-content d-none" id="section-head" data-entry-section>
                         <?= view('Family/_fields', $fieldData + ['part' => 'head']) ?>
+                        <?= view('Family/_media_fields') ?>
                     </div>
                 </li>
 
