@@ -24,6 +24,8 @@ $fieldOptionsJson = json_encode($fieldOptions, JSON_HEX_TAG | JSON_HEX_AMP | JSO
 <div id="importReview" class="pb-5 mb-5"
      data-rows-url="<?= esc(site_url('records/import/review/' . $jobId . '/rows'), 'attr') ?>"
      data-apply-url="<?= esc(site_url('records/import/review/' . $jobId . '/apply'), 'attr') ?>"
+     data-resolve-duplicate-url="<?= esc(site_url('records/import/review/' . $jobId . '/resolve-duplicate'), 'attr') ?>"
+     data-restore-url="<?= esc(site_url('records/import/review/' . $jobId . '/restore'), 'attr') ?>"
      data-commit-url="<?= esc(site_url('records/import/review/' . $jobId . '/commit'), 'attr') ?>"
      data-cancel-url="<?= esc(site_url('records/import/review/' . $jobId . '/cancel'), 'attr') ?>"
      data-redirect-url="<?= esc(site_url('records'), 'attr') ?>">
@@ -62,6 +64,9 @@ $fieldOptionsJson = json_encode($fieldOptions, JSON_HEX_TAG | JSON_HEX_AMP | JSO
         </button></li>
         <li class="nav-item"><button type="button" class="nav-link" data-severity="warning">
             Warnings <span class="badge rounded-pill text-bg-warning" data-count="warnings"><?= (int) ($counts['warnings'] ?? 0) ?></span>
+        </button></li>
+        <li class="nav-item"><button type="button" class="nav-link" data-severity="discarded">
+            Discarded <span class="badge rounded-pill text-bg-secondary" data-count="discarded"><?= (int) ($counts['discarded'] ?? 0) ?></span>
         </button></li>
     </ul>
 

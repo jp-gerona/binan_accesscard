@@ -301,6 +301,11 @@ function jsonResponse(data) {
     return Promise.resolve({ ok: true, json: () => Promise.resolve(data) });
 }
 
+class FakeFormData {
+    constructor() { this.entries = []; }
+    append(key, value) { this.entries.push([key, value]); }
+}
+
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 // --- Fixture: the ids import-review.js binds and the two <template> islands
@@ -330,6 +335,8 @@ const root = el('div', {
     id: 'importReview',
     'data-rows-url': 'http://localhost/records/import/review/5/rows',
     'data-apply-url': 'http://localhost/records/import/review/5/apply',
+    'data-resolve-duplicate-url': 'http://localhost/records/import/review/5/resolve-duplicate',
+    'data-restore-url': 'http://localhost/records/import/review/5/restore',
     'data-commit-url': 'http://localhost/records/import/review/5/commit',
     'data-cancel-url': 'http://localhost/records/import/review/5/cancel',
     'data-redirect-url': 'http://localhost/records',
@@ -391,6 +398,12 @@ const rowPage = {
             severity: 'warning',
             message: 'Monthly Income is blank.',
             cell: 'N42',
+        }, {
+            code: 'DUP-ROW',
+            label: 'Duplicate Row',
+            severity: 'blocking',
+            message: 'This row is an exact duplicate.',
+            cell: '',
         }],
         fields: [{
             field: 'monthlyincome',
@@ -400,6 +413,16 @@ const rowPage = {
             severity: 'warning',
             message: 'Monthly Income is blank.',
         }],
+        duplicateGroup: {
+            rows: [42, 43],
+            qr: '6001',
+            candidates: [
+                { sheetRow: 42, role: 'Head', values: { lastname: 'Cruz', firstname: 'Juan' } },
+                { sheetRow: 43, role: 'Head', values: { lastname: 'Cruz', firstname: 'Juan' } },
+            ],
+        },
+        discarded: false,
+        discardedReason: null,
     }],
     total: 1,
     filtered: 1,
@@ -408,6 +431,22 @@ const rowPage = {
 };
 
 const emptyPage = { rows: [], total: 0, filtered: 0, page: 1, per: 25 };
+const discardedPage = {
+    rows: [{
+        ...rowPage.rows[0],
+        sheetRow: 43,
+        severity: '',
+        issues: [{ code: 'DISCARDED', label: 'Discarded as duplicate of row 42', severity: 'warning', message: '', cell: '' }],
+        fields: [],
+        duplicateGroup: null,
+        discarded: true,
+        discardedReason: 'duplicate',
+    }],
+    total: 2,
+    filtered: 1,
+    page: 1,
+    per: 25,
+};
 
 let currentPayload = rowPage;
 const fetchCalls = [];
@@ -415,6 +454,7 @@ const fetchCalls = [];
 const fakeWindow = {};
 fakeWindow.window = fakeWindow;
 fakeWindow.document = documentNode;
+fakeWindow.FormData = FakeFormData;
 fakeWindow.fetch = (url, opts) => {
     fetchCalls.push({ url, opts });
     return jsonResponse(currentPayload);
@@ -431,7 +471,7 @@ await tick();
 assert.equal(fetchCalls.length, 1, 'import-review.js must fetch the first page on load.');
 const firstRow = tbody.querySelectorAll('tr')[0];
 assert.ok(firstRow, 'the fetched row must render a table row.');
-const rowCell = firstRow.querySelectorAll('td')[3];
+const rowCell = firstRow.querySelectorAll('td')[1];
 assert.equal(rowCell.textContent, '42', 'the Row column must show the sheet row.');
 
 // --- The collapsed Issues badge names both the cell and the problem, so no
@@ -448,7 +488,7 @@ await tick();
 
 const emptyCell = tbody.querySelectorAll('td')[0];
 assert.ok(emptyCell, 'an empty page must render the empty-state row.');
-assert.equal(emptyCell.colSpan, 8, 'the empty-state cell must span all 8 columns.');
+assert.equal(emptyCell.colSpan, 9, 'the empty-state cell must span all 9 columns.');
 
 // --- Editor panel colSpan covers the new column too. ---
 currentPayload = rowPage;
@@ -462,6 +502,35 @@ openButton.dispatch('click');
 const panel = tbody.querySelector('.js-import-panel');
 assert.ok(panel, 'clicking the toggle must open the editor panel.');
 const panelTd = panel.querySelectorAll('td')[0];
-assert.equal(panelTd.colSpan, 8, 'the editor panel must span all 8 columns.');
+assert.equal(panelTd.colSpan, 9, 'the editor panel must span all 9 columns.');
 
-console.log('OK: import-review.js renders the Excel row, badges cell refs (N42 · label), and spans the empty state and editor panel across 8 columns.');
+// --- An active Duplicate Row offers a focused comparison with one Keep action
+// per candidate. Resolving posts only the chosen keep_row and refetches this page. ---
+const keepButtons = panel.querySelectorAll('.js-import-keep-duplicate');
+assert.equal(keepButtons.length, 2, 'a duplicate comparison must offer one Keep button per candidate.');
+keepButtons[0].dispatch('click');
+await tick();
+
+const resolve = fetchCalls.find((call) => call.url.includes('/resolve-duplicate'));
+assert.ok(resolve, 'keeping a candidate must post to the duplicate resolver endpoint.');
+assert.equal(resolve.opts.body.entries[0][0], 'keep_row', 'resolver names the keep_row field.');
+assert.equal(String(resolve.opts.body.entries[0][1]), '42', 'resolver posts the selected keep_row.');
+
+// --- Discarded rows stay in All as muted resolution rows with Restore only. ---
+currentPayload = discardedPage;
+codeFilterEl.dispatch('change');
+await tick();
+
+const discardedRow = tbody.querySelector('tr[data-row="43"]');
+assert.ok(discardedRow.classList.contains('table-secondary'), 'discarded rows render in a muted table state.');
+const restoreButton = discardedRow.querySelector('.js-import-restore');
+assert.ok(restoreButton, 'a discarded row must offer Restore.');
+restoreButton.dispatch('click');
+await tick();
+
+const restore = fetchCalls.find((call) => call.url.includes('/restore'));
+assert.ok(restore, 'restoring must post to the restore endpoint.');
+assert.equal(restore.opts.body.entries[0][0], 'import_row', 'restore names the import_row field.');
+assert.equal(String(restore.opts.body.entries[0][1]), '43', 'restore posts the discarded import_row.');
+
+console.log('OK: import-review.js renders rows, duplicate resolver/restore actions, and 9-column empty/editor states.');

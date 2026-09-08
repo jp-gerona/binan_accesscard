@@ -639,3 +639,17 @@ div.dt-container div.dt-search .input-group {
     width: 1%;
     white-space: nowrap;
 }
+
+/* Duplicate review decisions remain local to the import table: muted discarded rows
+   stay readable, and the resolver cards keep each candidate's action beside it. */
+#importReview .import-review-discarded > td {
+    color: var(--bs-secondary-color);
+}
+
+#importReview .js-import-duplicate-panel .border {
+    background-color: var(--bs-body-bg);
+}
+
+#importReview .js-import-duplicate-panel .btn {
+    width: 100%;
+}

@@ -52,6 +52,8 @@ class ImportReviewPresenter
         'DUP-DB'     => ['label' => 'Person already in the system','hint' => 'This person is already on file under another family. A HEAD already on file means the whole group is skipped - check the QR.'],
         'DUP-DIFF'   => ['label' => 'Details differ from the system', 'hint' => 'Same family, but the file disagrees with what is stored. The import skips it, so nothing here is saved - edit the record in Manage Family.'],
         'DUP-PERSON' => ['label' => 'Possible duplicate person',   'hint' => 'Same name, birthday and address as another row. Imports anyway - delete a row if it really is a duplicate.'],
+        'DUP-ROW'    => ['label' => 'Duplicate Row',               'hint' => 'Choose the one complete duplicate row to keep.'],
+        'DUP-QR-FAMILY' => ['label' => 'Duplicate QR (Multiple Families)', 'hint' => 'Correct the QR number for the second household.'],
         'BRGY'       => ['label' => 'Barangay not recognised',     'hint' => 'Not an official Biñan barangay; imports with no barangay. The family is listed on the Data Completeness report.'],
         'SECTOR'     => ['label' => 'Invalid Sector Code',         'hint' => 'The code is not on the Reference sheet. Choose a listed sector code before importing.'],
         'CONTACT'    => ['label' => 'Contact number format',       'hint' => 'Should start with 09 and be 11 digits. Imports as typed.'],
@@ -85,6 +87,7 @@ class ImportReviewPresenter
         $errors = is_array($result['errors'] ?? null) ? $result['errors'] : [];
         $counts = is_array($result['counts'] ?? null) ? $result['counts'] : [];
         $rows   = is_array($result['rows'] ?? null) ? $result['rows'] : [];
+        $discarded = is_array($result['discarded'] ?? null) ? $result['discarded'] : [];
 
         return [
             'file'   => (string) ($result['file'] ?? 'import.xlsx'),
@@ -99,6 +102,7 @@ class ImportReviewPresenter
                 'appends'  => (int) ($counts['appends'] ?? 0),
                 'blocking' => (int) ($counts['blocking'] ?? 0),
                 'warnings' => (int) ($counts['warnings'] ?? 0),
+                'discarded' => count($discarded),
             ],
             // The codes actually present, so the filter dropdown offers only what
             // this file can be narrowed to.
@@ -161,6 +165,8 @@ class ImportReviewPresenter
         $rows    = is_array($result['rows'] ?? null) ? $result['rows'] : [];
         $errors  = is_array($result['errors'] ?? null) ? $result['errors'] : [];
         $columns = is_array($result['columns'] ?? null) ? $result['columns'] : [];
+        $discarded = is_array($result['discarded'] ?? null) ? $result['discarded'] : [];
+        $duplicateGroups = is_array($result['duplicateGroups'] ?? null) ? $result['duplicateGroups'] : [];
 
         // Index the errors once by sheet row; shaping 10,000 rows must not walk the
         // error list once per row.
@@ -175,13 +181,30 @@ class ImportReviewPresenter
         }
 
         $labelByQr = $this->familyLabels($rows);
-        $out       = [];
+        $rowDataBySheetRow = [];
+
+        foreach ($rows as $entry) {
+            $rowDataBySheetRow[(int) ($entry['sheetRow'] ?? 0)] = is_array($entry['data'] ?? null)
+                ? $entry['data']
+                : [];
+        }
+
+        $out = [];
 
         foreach ($rows as $entry) {
             $sheetRow = (int) ($entry['sheetRow'] ?? 0);
             $data     = is_array($entry['data'] ?? null) ? $entry['data'] : [];
             $qr       = trim((string) ($data['familyno'] ?? ''));
             $own      = $errorsByRow[$sheetRow] ?? [];
+            $resolution = $discarded[$sheetRow] ?? null;
+            $isDiscarded = is_array($resolution);
+            $values = [
+                'lastname'   => (string) ($data['lastname'] ?? ''),
+                'firstname'  => (string) ($data['firstname'] ?? ''),
+                'middlename' => (string) ($data['middlename'] ?? ''),
+                'birthday'   => (string) ($data['birthday'] ?? ''),
+                'sex'        => (string) ($data['sex'] ?? ''),
+            ];
 
             $out[] = [
                 'sheetRow' => $sheetRow,
@@ -190,16 +213,19 @@ class ImportReviewPresenter
                 'role'     => $this->isHeadRow($data)
                     ? 'Head'
                     : (trim((string) ($data['relationship'] ?? '')) ?: 'Member'),
-                'values'   => [
-                    'lastname'   => (string) ($data['lastname'] ?? ''),
-                    'firstname'  => (string) ($data['firstname'] ?? ''),
-                    'middlename' => (string) ($data['middlename'] ?? ''),
-                    'birthday'   => (string) ($data['birthday'] ?? ''),
-                    'sex'        => (string) ($data['sex'] ?? ''),
-                ],
-                'severity' => $this->worstSeverity($own),
-                'issues'   => $this->issuesFor($own, $columns, $sheetRow),
-                'fields'   => $this->fieldsFor($own, $data, $columns, $sheetRow),
+                'values'   => $values,
+                'severity' => $isDiscarded ? '' : $this->worstSeverity($own),
+                // A discarded copy is no longer an active validation failure. Its one
+                // resolution issue deliberately replaces every old issue and editor.
+                'issues'   => $isDiscarded
+                    ? [$this->discardedIssue((int) ($resolution['keptRow'] ?? 0))]
+                    : $this->issuesFor($own, $columns, $sheetRow),
+                'fields'   => $isDiscarded ? [] : $this->fieldsFor($own, $data, $columns, $sheetRow),
+                'discarded' => $isDiscarded,
+                'discardedReason' => $isDiscarded ? (string) ($resolution['reason'] ?? '') : null,
+                'duplicateGroup' => $isDiscarded || ! $this->hasCode($own, 'DUP-ROW')
+                    ? null
+                    : $this->duplicateGroupFor($duplicateGroups, $sheetRow, $rowDataBySheetRow),
             ];
         }
 
@@ -416,10 +442,90 @@ class ImportReviewPresenter
         return self::GROUPS[$code]['label'] ?? $code;
     }
 
+    /** One synthetic, non-editable issue explaining a discarded duplicate. */
+    private function discardedIssue(int $keptRow): array
+    {
+        return [
+            'code' => 'DISCARDED',
+            'label' => 'Discarded as duplicate of row ' . $keptRow,
+            'severity' => 'warning',
+            'message' => '',
+            'cell' => '',
+        ];
+    }
+
+    /** @param list<array> $errors */
+    private function hasCode(array $errors, string $wanted): bool
+    {
+        foreach ($errors as $error) {
+            if (($error['code'] ?? '') === $wanted) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * The raw group keeps its stable row-number interface while candidates give the
+     * browser enough display data to compare choices even when a candidate is off page.
+     *
+     * @param list<array> $groups
+     * @param array<int, array<string, mixed>> $rowDataBySheetRow
+     */
+    private function duplicateGroupFor(array $groups, int $sheetRow, array $rowDataBySheetRow): ?array
+    {
+        foreach ($groups as $group) {
+            $rows = is_array($group['rows'] ?? null) ? array_map('intval', $group['rows']) : [];
+
+            if (! in_array($sheetRow, $rows, true)) {
+                continue;
+            }
+
+            $candidates = [];
+            foreach ($rows as $candidateRow) {
+                $data = $rowDataBySheetRow[$candidateRow] ?? [];
+                $candidates[] = [
+                    'sheetRow' => $candidateRow,
+                    'qr' => (string) ($data['familyno'] ?? ''),
+                    'role' => $this->isHeadRow($data)
+                        ? 'Head'
+                        : (trim((string) ($data['relationship'] ?? '')) ?: 'Member'),
+                    'values' => [
+                        'lastname' => (string) ($data['lastname'] ?? ''),
+                        'firstname' => (string) ($data['firstname'] ?? ''),
+                        'middlename' => (string) ($data['middlename'] ?? ''),
+                        'birthday' => (string) ($data['birthday'] ?? ''),
+                        'sex' => (string) ($data['sex'] ?? ''),
+                    ],
+                ];
+            }
+
+            return [
+                'rows' => $rows,
+                'qr' => (string) ($group['qr'] ?? ''),
+                'candidates' => $candidates,
+            ];
+        }
+
+        return null;
+    }
+
     /** Whether a shaped row survives the current narrowing. */
     private function matches(array $row, ImportReviewQuery $query): bool
     {
+        $discarded = (bool) ($row['discarded'] ?? false);
         $severity = (string) $row['severity'];
+
+        if ($query->severity === 'discarded') {
+            return $discarded;
+        }
+
+        // Active filters never surface archived review decisions; All is the one
+        // intentional view that keeps them visible for restoration.
+        if ($discarded) {
+            return $query->severity === 'all';
+        }
 
         if ($query->severity === 'problems' && $severity === '') {
             return false;

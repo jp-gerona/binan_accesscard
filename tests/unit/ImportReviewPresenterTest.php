@@ -399,6 +399,48 @@ final class ImportReviewPresenterTest extends CIUnitTestCase
         $this->assertNull((new ImportReviewPresenter())->row($result, 999));
     }
 
+    public function testDiscardedRowsAreShownMutedWithoutTheirActiveErrorsOrEditors(): void
+    {
+        $result = [
+            'rows' => [$this->row(589, '6001', 'Head'), $this->row(590, '6001', 'Head')],
+            'errors' => [
+                $this->error(589, '6001', 'DUP-ROW', 'blocking', null),
+                $this->error(590, '6001', 'DUP-ROW', 'blocking', null),
+            ],
+            'discarded' => [590 => ['keptRow' => 589, 'reason' => 'duplicate']],
+            'duplicateGroups' => [['rows' => [589, 590], 'qr' => '6001']],
+        ];
+
+        $all = $this->page($result);
+        $row = $all['rows'][1];
+
+        $this->assertTrue($row['discarded']);
+        $this->assertSame('Discarded as duplicate of row 589', $row['issues'][0]['label']);
+        $this->assertSame([], $row['fields']);
+        $this->assertNull($row['duplicateGroup']);
+
+        $discarded = $this->page($result, ['severity' => 'discarded']);
+        $this->assertSame([590], array_column($discarded['rows'], 'sheetRow'));
+
+        $blocking = $this->page($result, ['severity' => 'blocking']);
+        $this->assertSame([589], array_column($blocking['rows'], 'sheetRow'));
+    }
+
+    public function testAnActiveDuplicateRowCarriesItsResolverGroup(): void
+    {
+        $page = $this->page([
+            'rows' => [$this->row(589, '6001', 'Head'), $this->row(590, '6001', 'Head')],
+            'errors' => [
+                $this->error(589, '6001', 'DUP-ROW', 'blocking', null),
+                $this->error(590, '6001', 'DUP-ROW', 'blocking', null),
+            ],
+            'duplicateGroups' => [['rows' => [589, 590], 'qr' => '6001']],
+        ]);
+
+        $this->assertFalse($page['rows'][0]['discarded']);
+        $this->assertSame([589, 590], $page['rows'][0]['duplicateGroup']['rows']);
+    }
+
     /** @param array<string, mixed> $query */
     private function page(array $result, array $query = []): array
     {
