@@ -5,6 +5,7 @@ namespace App\Jobs;
 use App\Libraries\FamilyExcelImporter;
 use App\Libraries\FamilyRecordWriteException;
 use App\Libraries\FamilyRecordWriter;
+use App\Libraries\ImportReviewResolution;
 use App\Models\Audit\AuditTrailsModel;
 use App\Models\Families\MemberModel;
 use App\Models\Families\MemberServiceModel;
@@ -109,7 +110,10 @@ class FamilyImportJob implements JobHandlerInterface
             'fileErrors' => $staged['fileErrors'] ?? [],
             // [field => Excel column letter] so the review can name the exact cell to fix.
             'columns'    => $staged['columns'] ?? [],
-            'counts'     => $counts,
+            'counts'          => $counts,
+            'discarded'       => [],
+            'duplicateGroups' => $staged['duplicateGroups'] ?? [],
+            'changes'         => [],
         ]);
 
         $message = $blocking > 0
@@ -143,8 +147,10 @@ class FamilyImportJob implements JobHandlerInterface
             return JobOutcome::failed('The reviewed import data is no longer available. Please upload the file again.');
         }
 
-        $rows     = is_array($bundle['rows'] ?? null) ? $bundle['rows'] : [];
-        $importer = new FamilyExcelImporter();
+        $rows      = is_array($bundle['rows'] ?? null) ? $bundle['rows'] : [];
+        $discarded = is_array($bundle['discarded'] ?? null) ? $bundle['discarded'] : [];
+        $rows      = ImportReviewResolution::activeRows($rows, $discarded);
+        $importer  = new FamilyExcelImporter();
 
         // Re-read the DB, don't trust the staged snapshot: another operator may have added
         // one of these families since the review, which turns a clean batch into a QR clash.

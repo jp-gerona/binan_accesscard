@@ -84,21 +84,24 @@ class ImportStagingStore
      * validation always produces both and a half-written pair would show the
      * operator a count that disagrees with the flags.
      *
-     * $changes, when given, replaces the meta's edit-history log in the same write -
-     * an Apply revalidation produces a new counts AND a new log entry together, and
-     * the meta file is small enough (no rows/errors) that folding both into one
-     * rewrite costs nothing extra.
+     * The active/discarded decision, fresh duplicate candidates, counts, and change log
+     * are one revalidation result, so they share the same atomic meta-file rewrite.
      */
-    public function saveErrors(int $jobId, array $errors, array $counts, ?array $changes = null): bool
-    {
+    public function saveErrors(
+        int $jobId,
+        array $errors,
+        array $counts,
+        array $discarded,
+        array $duplicateGroups,
+        array $changes,
+    ): bool {
         $this->ensureDir();
 
         $meta = $this->read($this->path($jobId));
-        $meta['counts'] = $counts;
-
-        if ($changes !== null) {
-            $meta['changes'] = $changes;
-        }
+        $meta['counts']          = $counts;
+        $meta['discarded']       = $discarded;
+        $meta['duplicateGroups'] = $duplicateGroups;
+        $meta['changes']         = $changes;
 
         $ok = $this->put($this->errorsPath($jobId), $errors);
 

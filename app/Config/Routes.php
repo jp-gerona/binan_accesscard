@@ -54,6 +54,8 @@ $routes->group('records', ['filter' => 'roleNav:records-import'], static functio
     $routes->post('import/review/(:num)/commit', 'Families\FamilyImportController::reviewCommit/$1');
     $routes->post('import/review/(:num)/cancel', 'Families\FamilyImportController::reviewCancel/$1');
     $routes->post('import/review/(:num)/apply', 'Families\FamilyImportController::reviewRowApply/$1');
+    $routes->post('import/review/(:num)/resolve-duplicate', 'Families\FamilyImportController::reviewResolveDuplicate/$1');
+    $routes->post('import/review/(:num)/restore', 'Families\FamilyImportController::reviewRestore/$1');
 });
 
 $routes->group('records', ['filter' => 'roleNav:records-completeness'], static function (RouteCollection $routes): void {
