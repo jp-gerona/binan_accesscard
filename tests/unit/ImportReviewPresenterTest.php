@@ -441,6 +441,38 @@ final class ImportReviewPresenterTest extends CIUnitTestCase
         $this->assertSame([589, 590], $page['rows'][0]['duplicateGroup']['rows']);
     }
 
+    public function testReviewGroupLabelsMatchTheApprovedWording(): void
+    {
+        // The spec's exact wording, pinned here so a label regression fails the
+        // build. Several of these codes surface only as a file notice or a filter
+        // entry rather than a row issue, so read the map directly.
+        $reflection = new \ReflectionClass(ImportReviewPresenter::class);
+        $groups = $reflection->getReflectionConstant('GROUPS')->getValue();
+
+        $expected = [
+            'FILE'         => 'File cannot be imported',
+            'QR-01'        => 'Missing QR',
+            'QR-FORMAT'    => 'Invalid QR',
+            'QR-05'        => 'QR is zero',
+            'QR-07'        => 'QR is too large',
+            'QR-08'        => 'QR cell contains an Excel error',
+            'QR-12'        => 'QR cell is a formula',
+            'HEAD-NONE'    => 'No Head in Family',
+            'HEAD-MULTI'   => 'Multiple Heads (Same Family)',
+            'FP-ADDR'      => 'Multiple Addresses in Family',
+            'QR-TAKEN'     => 'QR already assigned to another family',
+            'DUP-QR-FAMILY'=> 'Duplicate QR (Multiple Families)',
+            'DUP-ROW'      => 'Duplicate Row',
+            'SECTOR'       => 'Invalid Sector Code',
+            'SERVICE'      => 'Invalid Service Code',
+            'QR-CONTIG'    => 'Family rows not together',
+        ];
+
+        foreach ($expected as $code => $label) {
+            $this->assertSame($label, $groups[$code]['label'], $code);
+        }
+    }
+
     /** @param array<string, mixed> $query */
     private function page(array $result, array $query = []): array
     {
