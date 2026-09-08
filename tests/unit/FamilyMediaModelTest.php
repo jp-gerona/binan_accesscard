@@ -148,11 +148,14 @@ final class FamilyMediaModelTest extends CIUnitTestCase
 
     public function testSettingsDefaultToAnUnsetRootAndDocumentedLimits(): void
     {
-        $settings = new FamilyMediaSettings();
+        // Reflection reads the class's shipped defaults without the constructor's
+        // environment injection, so a deployment that sets a real root in .env
+        // cannot change what this test proves about the code.
+        $defaults = (new \ReflectionClass(FamilyMediaSettings::class))->getDefaultProperties();
 
-        $this->assertSame('', $settings->root);
-        $this->assertSame(5242880, $settings->photoMaxBytes);
-        $this->assertSame(1048576, $settings->signatureMaxBytes);
-        $this->assertSame(4096, $settings->maxDimension);
+        $this->assertSame('', $defaults['root'] ?? null);
+        $this->assertSame(5242880, $defaults['photoMaxBytes'] ?? null);
+        $this->assertSame(1048576, $defaults['signatureMaxBytes'] ?? null);
+        $this->assertSame(4096, $defaults['maxDimension'] ?? null);
     }
 }

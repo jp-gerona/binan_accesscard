@@ -20,9 +20,11 @@ replaceable from git; the database is not replaceable from anywhere.
 A **background worker process** that drains a job queue. If it is not running,
 large imports never finish, and they fail silently rather than loudly.
 
-A **private family-media root** outside this checkout. It holds the source
-portrait and signature files. The database records their registry and
-association, but not their image bytes.
+A **private family-media root** outside this checkout. It holds the portrait
+and signature files: an `inbox/` drop zone the office copies into and a
+`store/` archive the application files accepted media into, one folder per
+family. The database records their registry and association, but not their
+image bytes.
 
 ## Deploying
 
@@ -74,12 +76,15 @@ familymediasettings.root = '/var/lib/binan-accesscard-media'
 ```
 
 This handbook calls that configured folder `MEDIA_ROOT` in shell commands; it is
-not a second application setting. The storage boundary writes uploaded files at
-group-readable `0640`, and the setgid directory above keeps their group set to
-`binan-media`, so the worker account can read what the web account saved. Keep
-the folder outside anything the web server serves directly. Restart the PHP
-service after changing group membership, then install the worker at its default
-one-minute schedule as described in chapter 05.
+not a second application setting. The application creates the two zones under
+it on first use, `MEDIA_ROOT/inbox/` for the office's drops and
+`MEDIA_ROOT/store/{shard}/{headID}/` for accepted media, and both inherit the
+group set by the setgid directory above. The storage boundary writes uploaded
+and accepted files at group-readable `0640`, so the worker account can read
+what the web account saved. Keep the folder outside anything the web server
+serves directly. Restart the PHP service after changing group membership, then
+install the worker at its default one-minute schedule as described in chapter
+05.
 
 The database account needs `SELECT`, `INSERT`, `UPDATE`, and `DELETE` on the
 `accesscard` database. It does not need `DROP`, and it does not need access to

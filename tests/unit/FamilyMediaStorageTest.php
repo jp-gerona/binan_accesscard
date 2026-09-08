@@ -26,11 +26,7 @@ final class FamilyMediaStorageTest extends CIUnitTestCase
 
     protected function tearDown(): void
     {
-        foreach ((array) glob($this->root . DIRECTORY_SEPARATOR . '*') as $file) {
-            @chmod((string) $file, 0600);
-            @unlink((string) $file);
-        }
-        @rmdir($this->root);
+        $this->removeTree($this->root);
 
         parent::tearDown();
     }
@@ -104,23 +100,23 @@ final class FamilyMediaStorageTest extends CIUnitTestCase
 
     public function testItRejectsTraversalFilenamesAndLinks(): void
     {
+        $this->storage->inboxDir();
         $outside = tempnam(sys_get_temp_dir(), 'family-media-outside-');
         file_put_contents($outside, 'outside');
-        symlink($outside, $this->root . DIRECTORY_SEPARATOR . '019186.photo.jpg');
+        symlink($outside, $this->inboxPath('019186.photo.jpg'));
 
         $this->assertNull($this->storage->inspect('../019186.photo.jpg'));
         $this->assertNull($this->storage->inspect('019186.photo.jpg'));
-        $this->assertNull($this->storage->pathFor('../019186.photo.jpg'));
 
         @unlink($outside);
     }
 
     public function testItRejectsEmptyAndProjectStorageRoots(): void
     {
-        $this->assertNull($this->storageFor('')->pathFor('019186.photo.jpg'));
-        $this->assertNull($this->storageFor(FCPATH)->pathFor('019186.photo.jpg'));
-        $this->assertNull($this->storageFor(WRITEPATH)->pathFor('019186.photo.jpg'));
-        $this->assertNull($this->storageFor(ROOTPATH)->pathFor('019186.photo.jpg'));
+        $this->assertNull($this->storageFor('')->root());
+        $this->assertNull($this->storageFor(FCPATH)->root());
+        $this->assertNull($this->storageFor(WRITEPATH)->root());
+        $this->assertNull($this->storageFor(ROOTPATH)->root());
     }
 
     public function testItRejectsProjectRootAncestorsAndPreservesExternalTemporaryRoots(): void
@@ -133,7 +129,7 @@ final class FamilyMediaStorageTest extends CIUnitTestCase
         $ancestor = dirname($projectRoot);
         $controlNo = random_int(1000000000, 9999999999);
         $filename = sprintf('%06d.photo.jpg', $controlNo);
-        $destination = $ancestor . DIRECTORY_SEPARATOR . $filename;
+        $destination = $ancestor . DIRECTORY_SEPARATOR . 'inbox' . DIRECTORY_SEPARATOR . $filename;
         $upload = tempnam(sys_get_temp_dir(), 'family-media-upload-');
         $this->assertNotFalse($upload);
         $this->assertFileDoesNotExist($destination);
@@ -152,41 +148,42 @@ final class FamilyMediaStorageTest extends CIUnitTestCase
         }
     }
 
-    public function testItScansOnlyAcceptedFiles(): void
+    public function testCandidateFilenamesListsTheInboxCanonicalFiles(): void
     {
         $this->writeJpeg('019186.photo.jpg', 100, 100);
         $this->writeJpeg('19186.photo.jpg', 100, 100);
         $this->writePng('019187.signature.png', 100, 100);
 
-        $files = iterator_to_array($this->storage->scan());
-
-        $this->assertSame(['019186.photo.jpg', '019187.signature.png'], array_column($files, 'source_filename'));
+        $this->assertSame(
+            ['019186.photo.jpg', '019187.signature.png'],
+            $this->storage->candidateFilenames(),
+        );
     }
 
     public function testCandidateFilenamesIgnoresNonCanonicalEntriesTempsDotfilesDirsAndLinks(): void
     {
         $this->writeJpeg('019186.photo.jpg', 100, 100);
-        file_put_contents($this->root . DIRECTORY_SEPARATOR . '.DS_Store', 'junk');
-        file_put_contents($this->root . DIRECTORY_SEPARATOR . '.019187.photo.jpg.tmp-abc', 'partial');
-        $this->writeJpegAt($this->root . DIRECTORY_SEPARATOR . '19186.photo.jpg', 100, 100, [255, 255, 255]);
-        mkdir($this->root . DIRECTORY_SEPARATOR . 'subdir', 0700);
+        file_put_contents($this->inboxPath('.DS_Store'), 'junk');
+        file_put_contents($this->inboxPath('.019187.photo.jpg.tmp-abc'), 'partial');
+        $this->writeJpegAt($this->inboxPath('19186.photo.jpg'), 100, 100, [255, 255, 255]);
+        mkdir($this->inboxPath('subdir'), 0700);
         $outside = tempnam(sys_get_temp_dir(), 'family-media-outside-');
         $this->assertNotFalse($outside);
-        symlink($outside, $this->root . DIRECTORY_SEPARATOR . '019999.photo.jpg');
+        symlink($outside, $this->inboxPath('019999.photo.jpg'));
 
         // Only the canonical real file is a candidate; nothing else is judged invalid.
         $this->assertSame(['019186.photo.jpg'], $this->storage->candidateFilenames());
 
         @unlink($outside);
-        @rmdir($this->root . DIRECTORY_SEPARATOR . 'subdir');
     }
 
-    public function testCandidateFilenamesThrowsWhenTheRootCannotBeListed(): void
+    public function testCandidateFilenamesThrowsWhenTheInboxCannotBeListed(): void
     {
+        $this->storage->inboxDir();
         chmod($this->root, 0000);
 
         try {
-            if (@scandir($this->root) !== false) {
+            if (@scandir($this->storage->inboxDir()) !== false) {
                 $this->markTestSkipped('The current PHP user can read chmod 0000 directories.');
             }
 
@@ -214,6 +211,77 @@ final class FamilyMediaStorageTest extends CIUnitTestCase
 
         @unlink($path);
         $this->assertNull($this->storage->metadata('019186.photo.jpg'));
+    }
+
+    public function testStorePathForDerivesTheShardedStoreLocation(): void
+    {
+        $expected = realpath($this->root) . DIRECTORY_SEPARATOR . 'store' . DIRECTORY_SEPARATOR . '48'
+            . DIRECTORY_SEPARATOR . '4821' . DIRECTORY_SEPARATOR . 'photo.jpg';
+
+        // A stat never creates directories; a write does.
+        $this->assertSame($expected, $this->storage->storePathFor(4821, FamilyMediaModel::KIND_PHOTO));
+        $this->assertFileDoesNotExist(dirname($expected));
+
+        $this->assertNotNull($this->storage->storePathFor(4821, FamilyMediaModel::KIND_PHOTO, true));
+        $this->assertDirectoryExists(dirname($expected));
+
+        $this->assertNull($this->storage->storePathFor(0, FamilyMediaModel::KIND_PHOTO));
+        $this->assertNull($this->storage->storePathFor(4821, 'badge'));
+        $this->assertNull($this->storageFor('')->storePathFor(4821, FamilyMediaModel::KIND_PHOTO));
+    }
+
+    public function testMoveToStoreRelocatesTheInboxFileLeavingExactlyOneCopy(): void
+    {
+        $this->writeJpeg('019186.photo.jpg', 100, 100);
+        $source = $this->inboxPath('019186.photo.jpg');
+        $hash = hash_file('sha256', $source);
+
+        $this->assertTrue($this->storage->moveToStore('019186.photo.jpg', 4821, FamilyMediaModel::KIND_PHOTO));
+
+        $destination = $this->storage->storePathFor(4821, FamilyMediaModel::KIND_PHOTO);
+        $this->assertFileExists($destination);
+        $this->assertFileDoesNotExist($source);
+        $this->assertSame($hash, hash_file('sha256', $destination));
+        $this->assertSame(0640, fileperms($destination) & 0777);
+
+        // A move whose inbox file is gone (already moved) is a harmless false.
+        $this->assertFalse($this->storage->moveToStore('019186.photo.jpg', 4821, FamilyMediaModel::KIND_PHOTO));
+    }
+
+    public function testStoredMetadataAndInspectStoredReadTheStoreZoneOnly(): void
+    {
+        $this->writeJpeg('019186.photo.jpg', 100, 100);
+        $this->storage->moveToStore('019186.photo.jpg', 4821, FamilyMediaModel::KIND_PHOTO);
+
+        $stat = $this->storage->storedMetadata(4821, FamilyMediaModel::KIND_PHOTO);
+        $this->assertIsArray($stat);
+        $this->assertGreaterThan(0, $stat['byte_size']);
+
+        $inspection = $this->storage->inspectStored(4821, FamilyMediaModel::KIND_PHOTO, '019186.photo.jpg');
+        $this->assertIsArray($inspection);
+        $this->assertSame('019186.photo.jpg', $inspection['source_filename']);
+        $this->assertSame(FamilyMediaModel::KIND_PHOTO, $inspection['kind']);
+        $this->assertSame('image/jpeg', $inspection['mime']);
+
+        // A head with nothing stored answers null for both.
+        $this->assertNull($this->storage->storedMetadata(9999, FamilyMediaModel::KIND_PHOTO));
+        $this->assertNull($this->storage->inspectStored(9999, FamilyMediaModel::KIND_PHOTO, 'x.jpg'));
+    }
+
+    public function testAdoptLegacyRootFilesMovesFlatLayoutDropsIntoTheInbox(): void
+    {
+        $this->writeJpegAt($this->root . DIRECTORY_SEPARATOR . '019186.photo.jpg', 100, 100, [255, 0, 0]);
+        $this->writePngAt($this->root . DIRECTORY_SEPARATOR . '019187.signature.png', 100, 100);
+        file_put_contents($this->root . DIRECTORY_SEPARATOR . 'junk.txt', 'not canonical');
+
+        $moved = $this->storage->adoptLegacyRootFiles();
+
+        $this->assertSame(2, $moved);
+        $this->assertFileExists($this->inboxPath('019186.photo.jpg'));
+        $this->assertFileExists($this->inboxPath('019187.signature.png'));
+        $this->assertFileDoesNotExist($this->root . DIRECTORY_SEPARATOR . '019186.photo.jpg');
+        // Non-canonical entries stay where they are; adoption ignores them.
+        $this->assertFileExists($this->root . DIRECTORY_SEPARATOR . 'junk.txt');
     }
 
     public function testConfiguredRootIsOutsidePublicAndWritableProjectDirectories(): void
@@ -253,7 +321,7 @@ final class FamilyMediaStorageTest extends CIUnitTestCase
         $this->assertNotSame($oldHash, $inspection['content_sha256']);
         $this->assertSame($inspection['content_sha256'], hash_file('sha256', $destination));
         $this->assertFileExists($upload);
-        $this->assertSame([], glob($this->root . DIRECTORY_SEPARATOR . '.*.tmp-*'));
+        $this->assertSame([], glob($this->inboxPath('.*.tmp-*')));
         @unlink($upload);
     }
 
@@ -261,7 +329,7 @@ final class FamilyMediaStorageTest extends CIUnitTestCase
     {
         $upload = tempnam(sys_get_temp_dir(), 'family-media-upload-');
         $this->writeJpegAt($upload, 100, 100, [0, 0, 255]);
-        $destination = $this->root . DIRECTORY_SEPARATOR . '019195.photo.jpg';
+        $destination = $this->inboxPath('019195.photo.jpg');
 
         try {
             $this->storage->storeUpload(
@@ -301,9 +369,14 @@ final class FamilyMediaStorageTest extends CIUnitTestCase
         return new FamilyMediaStorage($settings);
     }
 
+    private function inboxPath(string $filename): string
+    {
+        return $this->root . DIRECTORY_SEPARATOR . 'inbox' . DIRECTORY_SEPARATOR . $filename;
+    }
+
     private function writeJpeg(string $filename, int $width, int $height, array $colour = [255, 255, 255]): string
     {
-        $path = $this->root . DIRECTORY_SEPARATOR . $filename;
+        $path = $this->inboxPath($filename);
         $this->writeJpegAt($path, $width, $height, $colour);
 
         return $path;
@@ -311,6 +384,7 @@ final class FamilyMediaStorageTest extends CIUnitTestCase
 
     private function writeJpegAt(string $path, int $width, int $height, array $colour): void
     {
+        @mkdir(dirname($path), 0770, true);
         $image = imagecreatetruecolor($width, $height);
         imagefill($image, 0, 0, imagecolorallocate($image, ...$colour));
         imagejpeg($image, $path, 90);
@@ -319,12 +393,40 @@ final class FamilyMediaStorageTest extends CIUnitTestCase
 
     private function writePng(string $filename, int $width, int $height): string
     {
-        $path = $this->root . DIRECTORY_SEPARATOR . $filename;
+        return $this->writePngAt($this->inboxPath($filename), $width, $height);
+    }
+
+    private function writePngAt(string $path, int $width, int $height): string
+    {
+        @mkdir(dirname($path), 0770, true);
         $image = imagecreatetruecolor($width, $height);
         imagepng($image, $path);
         imagedestroy($image);
 
         return $path;
+    }
+
+    private function removeTree(string $dir): void
+    {
+        if (! is_dir($dir)) {
+            return;
+        }
+
+        foreach ((array) scandir($dir) as $entry) {
+            if ($entry === '.' || $entry === '..') {
+                continue;
+            }
+
+            $path = $dir . DIRECTORY_SEPARATOR . $entry;
+            if (is_dir($path) && ! is_link($path)) {
+                $this->removeTree($path);
+            } else {
+                @chmod($path, 0600);
+                @unlink($path);
+            }
+        }
+
+        @rmdir($dir);
     }
 }
 

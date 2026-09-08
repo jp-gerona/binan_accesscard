@@ -63,8 +63,7 @@ final class FamilyMediaUploadTest extends CIUnitTestCase
         service('superglobals')->setFilesArray([]);
         FeatureUploadFiles::clear();
         config(FamilyMediaSettings::class)->root = $this->originalRoot;
-        array_map('unlink', glob($this->root . DIRECTORY_SEPARATOR . '*') ?: []);
-        rmdir($this->root);
+        $this->removeTree($this->root);
         DumpSchema::drop(db_connect());
         parent::tearDown();
     }
@@ -121,15 +120,17 @@ final class FamilyMediaUploadTest extends CIUnitTestCase
 
         $this->assertSame(200, $response->response()->getStatusCode(), $response->getBody());
         $json = json_decode((string) $response->getJSON(), true, 512, JSON_THROW_ON_ERROR);
-        $this->assertFileExists($this->root . DIRECTORY_SEPARATOR . '019187.photo.jpg');
-        $this->assertFileExists($this->root . DIRECTORY_SEPARATOR . '019187.signature.png');
+        // Uploads enter through the same inbox the office drops into; the
+        // queued reconciler moves them into the store once it runs.
+        $this->assertFileExists($this->root . DIRECTORY_SEPARATOR . 'inbox' . DIRECTORY_SEPARATOR . '019187.photo.jpg');
+        $this->assertFileExists($this->root . DIRECTORY_SEPARATOR . 'inbox' . DIRECTORY_SEPARATOR . '019187.signature.png');
         $this->assertSame(1, db_connect()->table('job_queue')->where('type', 'media_reconcile')->countAllResults());
     }
 
     public function testEditReplacesAnUploadedPhotoAndOmittedMediaStaysUntouched(): void
     {
         $this->seedHead(7, 19188);
-        $existing = $this->root . DIRECTORY_SEPARATOR . '019188.signature.png';
+        $existing = $this->root . DIRECTORY_SEPARATOR . 'store' . DIRECTORY_SEPARATOR . '0' . DIRECTORY_SEPARATOR . '7' . DIRECTORY_SEPARATOR . 'signature.png';
         $this->writeImage($existing, 'png', [0, 0, 0]);
         db_connect()->table('family_media')->insert([
             'headID' => 7,
@@ -143,7 +144,7 @@ final class FamilyMediaUploadTest extends CIUnitTestCase
         $first = $this->imageUpload('jpg', [255, 0, 0]);
         $firstResponse = $this->postUpdateWithUploads(7, 19188, ['head_photo' => $first]);
         $this->assertSame(200, $firstResponse->response()->getStatusCode(), $firstResponse->getBody());
-        $photoPath = $this->root . DIRECTORY_SEPARATOR . '019188.photo.jpg';
+        $photoPath = $this->root . DIRECTORY_SEPARATOR . 'inbox' . DIRECTORY_SEPARATOR . '019188.photo.jpg';
         $firstHash = hash_file('sha256', $photoPath);
 
         $replacement = $this->imageUpload('jpg', [0, 0, 255]);
@@ -266,6 +267,7 @@ final class FamilyMediaUploadTest extends CIUnitTestCase
 
     private function writeImage(string $path, string $format, array $colour): void
     {
+        @mkdir(dirname($path), 0770, true);
         $image = imagecreatetruecolor(20, 20);
         imagefill($image, 0, 0, imagecolorallocate($image, ...$colour));
         if ($format === 'jpg') {
@@ -274,6 +276,29 @@ final class FamilyMediaUploadTest extends CIUnitTestCase
             imagepng($image, $path);
         }
         imagedestroy($image);
+    }
+
+    private function removeTree(string $dir): void
+    {
+        if (! is_dir($dir)) {
+            return;
+        }
+
+        foreach ((array) scandir($dir) as $entry) {
+            if ($entry === '.' || $entry === '..') {
+                continue;
+            }
+
+            $path = $dir . DIRECTORY_SEPARATOR . $entry;
+            if (is_dir($path) && ! is_link($path)) {
+                $this->removeTree($path);
+            } else {
+                @chmod($path, 0600);
+                @unlink($path);
+            }
+        }
+
+        @rmdir($dir);
     }
 }
 }

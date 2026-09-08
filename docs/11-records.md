@@ -95,9 +95,20 @@ and `store` for creation, `profile` and `edit` for viewing and editing, `update`
 
 ## Family portraits and signatures
 
-The office can maintain a portrait and signature directly in the private folder
-configured as `familymediasettings.root`, called `MEDIA_ROOT` in the commands in
-this handbook. The direct-folder convention is exact:
+The private folder configured as `familymediasettings.root`, called `MEDIA_ROOT`
+in the commands in this handbook, has two zones:
+
+```text
+MEDIA_ROOT/
+  inbox/                      <- the office drop zone
+    019186.photo.jpg
+    019186.signature.png
+  store/48/4821/              <- the system-owned archive, one folder per family
+    photo.jpg
+    signature.png
+```
+
+The office works only with the inbox. The direct-folder convention is exact:
 
 ```text
 019186.photo.jpg
@@ -105,31 +116,46 @@ this handbook. The direct-folder convention is exact:
 ```
 
 The six digits are the zero-padded control number. A portrait is a JPEG and a
-signature is a PNG. Copy files into `MEDIA_ROOT` with their final names, for
+signature is a PNG. Copy files into the inbox with their final names, for
 example:
 
 ```bash
-cp /secure-intake/019186.photo.jpg "$MEDIA_ROOT/019186.photo.jpg"
-cp /secure-intake/019186.signature.png "$MEDIA_ROOT/019186.signature.png"
+cp /secure-intake/019186.photo.jpg "$MEDIA_ROOT/inbox/019186.photo.jpg"
+cp /secure-intake/019186.signature.png "$MEDIA_ROOT/inbox/019186.signature.png"
 ```
 
 Files may arrive before or after the Excel import creates the family and its
 control number. If `019186.photo.jpg` arrives first, the next shared-worker scan
 records it as pending. It remains pending and is not deleted while no imported
 head resolves control number `19186`. Once that head exists, the next scan links
-it and an Encoder, Admin, or Developer can see it on the family profile.
+it, moves it out of the inbox into the family's permanent store folder, and an
+Encoder, Admin, or Developer can see it on the family profile. The move is a
+rename, not a copy: exactly one copy of the file exists at any moment, and the
+inbox stays small.
+
+The store is organized by the family's permanent member ID, which is the number
+in the family profile's URL (`records/4821` is the folder `store/48/4821/`),
+sharded by its first digits so no directory ever holds a six-figure entry count.
+A card replacement never moves it: the QR number is read only at intake, and a
+retired number never resolves again, so a folder belongs to one family for the
+life of the record.
 
 The one-minute scheduled worker queues and performs this reconciliation
 automatically. There is no page to press and no filesystem watcher to install.
-The worker scans the root, records only valid canonical image files, and leaves
-invalid source files in the folder for staff to correct. Correct the filename,
-format, dimensions, or size in place and let the next scan inspect it again.
+The worker scans the inbox, records only valid canonical image files, and leaves
+invalid drops in the inbox for staff to correct. A file whose name or format is
+wrong simply stays where it was dropped, nothing appears on any profile, and the
+worker log names the file and why it was rejected. Correct the filename, format,
+dimensions, or size in place and let the next scan inspect it again.
 
-The folder is the source of truth. Replace a portrait by copying a replacement
-JPEG over `019186.photo.jpg`; the next scan updates the registry and writes a
-media replacement row on the audit page. Delete that file directly; the next scan
-marks it missing, removes its availability from the profile, and writes a media
-removal row. Do not expect the profile to retain a deleted source file.
+Replace a portrait by dropping the same QR-named file into the inbox again; the
+next scan overwrites the store copy, updates the registry, and writes a media
+replacement row on the audit page. Edits made directly inside a family's store
+folder are picked up the same way: the next scan re-validates the changed bytes
+before serving them, and bytes that no longer pass validation stop being served
+until corrected. Delete a store file directly; the next scan marks it missing,
+removes its availability from the profile, and writes a media removal row. Do
+not expect the profile to retain a deleted source file.
 
 Media is delivered only through the protected family route, not as a public file
 URL. Viewer accounts receive a 404 for a direct media URL and their profile shows

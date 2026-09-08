@@ -38,11 +38,7 @@ final class FamilyMediaControllerTest extends CIUnitTestCase
 
     protected function tearDown(): void
     {
-        foreach ((array) glob($this->root . DIRECTORY_SEPARATOR . '*') as $path) {
-            @chmod((string) $path, 0600);
-            @unlink((string) $path);
-        }
-        @rmdir($this->root);
+        $this->removeTree($this->root);
 
         $settings = config('FamilyMediaSettings');
         $settings->root = '';
@@ -72,7 +68,7 @@ final class FamilyMediaControllerTest extends CIUnitTestCase
         $response->assertStatus(200);
         $response->assertHeader('Content-Type', 'image/png');
         $this->assertSame(
-            hash('sha256', (string) file_get_contents($this->root . DIRECTORY_SEPARATOR . '019187.signature.png')),
+            hash('sha256', (string) file_get_contents($this->storePath($headId, 'signature'))),
             hash('sha256', (string) $response->response()->getBody()),
             'The streamed body must be the stored file bytes.'
         );
@@ -101,7 +97,7 @@ final class FamilyMediaControllerTest extends CIUnitTestCase
     {
         $headId = 119190;
         ReferentialFixture::heads(db_connect(), [$headId]);
-        $this->writePng('019190.photo.jpg');
+        $this->writeStoredPng($headId, FamilyMediaModel::KIND_PHOTO);
         $this->linkRow($headId, FamilyMediaModel::KIND_PHOTO, '019190.photo.jpg', 19190);
 
         $this->withSession($this->sessionFor('encoder'))->get('records/' . $headId . '/media/photo')
@@ -120,7 +116,7 @@ final class FamilyMediaControllerTest extends CIUnitTestCase
             'middlename' => '',
             'lastname'   => 'FIXTURE',
         ]);
-        $this->writeJpeg('019191.photo.jpg');
+        $this->writeStoredJpeg($headId, FamilyMediaModel::KIND_PHOTO);
         $this->linkRow($headId, FamilyMediaModel::KIND_PHOTO, '019191.photo.jpg', 19191);
         db_connect()->table('family_media')
             ->where('source_filename', '019191.photo.jpg')
@@ -137,7 +133,7 @@ final class FamilyMediaControllerTest extends CIUnitTestCase
     {
         $headId = 119189;
         ReferentialFixture::heads(db_connect(), [$headId]);
-        $this->writeJpeg('019189.photo.jpg');
+        $this->writeStoredJpeg($headId, FamilyMediaModel::KIND_PHOTO);
         $this->linkRow($headId, FamilyMediaModel::KIND_PHOTO, '019189.photo.jpg', 19189);
 
         // A relative of the head: linked rows are only ever attached to heads, so
@@ -208,24 +204,24 @@ final class FamilyMediaControllerTest extends CIUnitTestCase
     }
 
     /**
-     * A head with a linked photo registry row plus real photo bytes in the root.
+     * A head with a linked photo registry row plus real photo bytes in the store.
      */
     private function seedLinkedPhoto(int $headId = 119186): int
     {
         ReferentialFixture::heads(db_connect(), [$headId]);
-        $this->writeJpeg('019186.photo.jpg');
+        $this->writeStoredJpeg($headId, FamilyMediaModel::KIND_PHOTO);
         $this->linkRow($headId, FamilyMediaModel::KIND_PHOTO, '019186.photo.jpg', 19186);
 
         return $headId;
     }
 
     /**
-     * A head with a linked signature registry row plus real signature bytes in the root.
+     * A head with a linked signature registry row plus real signature bytes in the store.
      */
     private function seedLinkedSignature(int $headId = 119187): int
     {
         ReferentialFixture::heads(db_connect(), [$headId]);
-        $this->writePng('019187.signature.png');
+        $this->writeStoredPng($headId, FamilyMediaModel::KIND_SIGNATURE);
         $this->linkRow($headId, FamilyMediaModel::KIND_SIGNATURE, '019187.signature.png', 19187);
 
         return $headId;
@@ -240,7 +236,7 @@ final class FamilyMediaControllerTest extends CIUnitTestCase
             'kind'              => $kind,
         ]);
         $this->assertGreaterThan(0, $mediaId);
-        $path = $this->root . DIRECTORY_SEPARATOR . $filename;
+        $path = $this->storePath($headId, $kind);
         $this->assertTrue($model->link(
             $mediaId,
             $headId,
@@ -272,18 +268,51 @@ final class FamilyMediaControllerTest extends CIUnitTestCase
         return (int) $db->insertID();
     }
 
-    private function writeJpeg(string $filename): void
+    private function storePath(int $headId, string $kind): string
     {
+        return $this->root . DIRECTORY_SEPARATOR . 'store' . DIRECTORY_SEPARATOR . intdiv($headId, 100)
+            . DIRECTORY_SEPARATOR . $headId . DIRECTORY_SEPARATOR . $kind . '.' . ($kind === 'photo' ? 'jpg' : 'png');
+    }
+
+    private function writeStoredJpeg(int $headId, string $kind): void
+    {
+        $path = $this->storePath($headId, $kind);
+        @mkdir(dirname($path), 0770, true);
         $image = imagecreatetruecolor(640, 480);
         imagefill($image, 0, 0, imagecolorallocate($image, 255, 255, 255));
-        imagejpeg($image, $this->root . DIRECTORY_SEPARATOR . $filename, 90);
+        imagejpeg($image, $path, 90);
         imagedestroy($image);
     }
 
-    private function writePng(string $filename): void
+    private function writeStoredPng(int $headId, string $kind): void
     {
+        $path = $this->storePath($headId, $kind);
+        @mkdir(dirname($path), 0770, true);
         $image = imagecreatetruecolor(200, 100);
-        imagepng($image, $this->root . DIRECTORY_SEPARATOR . $filename);
+        imagepng($image, $path);
         imagedestroy($image);
+    }
+
+    private function removeTree(string $dir): void
+    {
+        if (! is_dir($dir)) {
+            return;
+        }
+
+        foreach ((array) scandir($dir) as $entry) {
+            if ($entry === '.' || $entry === '..') {
+                continue;
+            }
+
+            $path = $dir . DIRECTORY_SEPARATOR . $entry;
+            if (is_dir($path) && ! is_link($path)) {
+                $this->removeTree($path);
+            } else {
+                @chmod($path, 0600);
+                @unlink($path);
+            }
+        }
+
+        @rmdir($dir);
     }
 }

@@ -62,8 +62,13 @@ final class FamilyMediaQueueTest extends CIUnitTestCase
 
     public function testMediaReconcileHandlerThrowsOnAnUnconfiguredRoot(): void
     {
+        // Pin the root explicitly: a deployment .env that sets a real root must
+        // not turn this test into a scan of the office's actual folder.
+        $settings = new FamilyMediaSettings();
+        $settings->root = '';
+        $handler = new FamilyMediaReconcileJob(new FamilyMediaReconciler(new FamilyMediaStorage($settings)));
+
         $jobId = $this->queue->enqueue('media_reconcile', []);
-        $handler = new FamilyMediaReconcileJob(new FamilyMediaReconciler());
 
         $this->expectException(RuntimeException::class);
 

@@ -11,9 +11,9 @@ use CodeIgniter\HTTP\ResponseInterface;
 /**
  * Serves the private photo and signature files linked to a family head.
  *
- * Bytes come from the office-managed storage root only: the filename always
- * comes from the linked registry row, and the absolute path is resolved by
- * FamilyMediaStorage::pathFor(), so a request can never name a file. Every
+ * Bytes come from the system-owned store only: the path is derived from the
+ * linked registry row's head and kind by FamilyMediaStorage::storePathFor(),
+ * so a request can never name a file. Every
  * unknown, absent, malformed, or unauthorised case answers the same empty 404,
  * so the response never reveals whether a person has media. The `records-media`
  * route filter already gated the session's role before this controller runs.
@@ -38,8 +38,8 @@ class FamilyMediaController extends BaseController
             return $this->notFound();
         }
 
-        $path = (new FamilyMediaStorage())->pathFor((string) ($media['source_filename'] ?? ''));
-        if ($path === null) {
+        $path = (new FamilyMediaStorage())->storePathFor($headId, $kind);
+        if ($path === null || ! is_file($path) || ! is_readable($path)) {
             return $this->notFound();
         }
 

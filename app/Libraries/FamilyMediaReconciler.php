@@ -12,15 +12,18 @@ use RuntimeException;
  * Background policy that reconciles the office-managed media folder into the
  * family_media registry.
  *
+ * The folder has two zones. `inbox/` holds the office's drops, named by the
+ * current control number; each accepted file is MOVED into its permanent
+ * `store/{shard}/{headID}/` folder the moment it links to a family, so exactly
+ * one copy exists and the inbox stays small. The store is then verified every
+ * run: an office edit directly in a family's store folder is re-validated and
+ * fingerprinted, a deleted store file marks the row missing, and a restored or
+ * corrected file links again through the row's retained head, which survives
+ * card replacement because retired control numbers never resolve again.
+ *
  * The reconciler owns the policy, never the query builder. Folder enumeration
  * and per-file validation come from FamilyMediaStorage, and every family_media
  * or qr_control read/write goes through FamilyMediaModel and QrControlModel.
- *
- * The scan is kept cheap for a large folder: a known file whose byte size and
- * stored mtime still match is reused without opening its content, and image
- * bytes are read only for new or changed files. An invalid source is counted
- * but never recorded, so staff can correct the folder without the application
- * deleting evidence.
  */
 class FamilyMediaReconciler
 {
@@ -43,11 +46,12 @@ class FamilyMediaReconciler
     }
 
     /**
-     * Scans the managed folder once and updates the registry.
+     * Scans the inbox once, moves accepted files into the store, and verifies
+     * every attached registry row against its stored file.
      *
      * A root or database failure throws so the generic worker records a
      * retry/failure instead of treating the folder as empty. Individual invalid
-     * files are counted and never recorded.
+     * files are counted and left in the inbox for the office to correct.
      *
      * @return array{seen:int,linked:int,pending:int,invalid:int,missing:int,replaced:int}
      */
@@ -62,23 +66,32 @@ class FamilyMediaReconciler
             throw new RuntimeException('The family media root is not an accessible directory outside the project.');
         }
 
+        // A deployment upgrading from the flat layout may still hold accepted
+        // files directly in the root; adopt them through the normal intake path.
+        $this->storage->adoptLegacyRootFiles();
+
         $filenames = $this->storage->candidateFilenames();
         $total = count($filenames);
         $reporter->setTotal($total);
 
         $known = $this->knownByFilename();
-        $seen = [];
+        $inboxSeen = [];
         $done = 0;
 
         foreach ($filenames as $filename) {
             $row = $known[$filename] ?? null;
+            $inboxSeen[$filename] = true;
 
             if ($row !== null && $this->unchanged($row, $filename)) {
-                // Known and unchanged: never open the file. A pending/missing row
-                // gets re-evaluated anyway, because its family may have arrived.
-                $seen[$filename] = true;
-
-                if ((string) $row['state'] !== FamilyMediaModel::STATE_LINKED) {
+                if ((string) $row['state'] === FamilyMediaModel::STATE_LINKED && (int) ($row['headID'] ?? 0) > 0) {
+                    // Already linked with matching bytes: the only reason its
+                    // file is still in the inbox is a move that failed last run
+                    // (or an office copy). File it into the store and move on;
+                    // the store verification pass handles everything else.
+                    $this->storage->moveToStore($filename, (int) $row['headID'], (string) $row['kind']);
+                } else {
+                    // A pending, invalid, or missing row gets re-evaluated,
+                    // because its family may have arrived or its file returned.
                     $this->resolve($this->fromRow($row), $row, $counts);
                 }
             } else {
@@ -87,7 +100,6 @@ class FamilyMediaReconciler
                 if ($inspection === null) {
                     $counts['invalid']++;
                 } else {
-                    $seen[$inspection['source_filename']] = true;
                     $this->resolve($inspection, $row ?? null, $counts);
                 }
             }
@@ -100,31 +112,30 @@ class FamilyMediaReconciler
             }
         }
 
-        $counts['seen'] = count($seen);
+        $counts['seen'] = $total;
 
-        $missing = $this->media->markMissingExcept(array_keys($seen));
-
-        foreach ($missing as $row) {
-            if ((int) ($row['headID'] ?? 0) > 0) {
-                $this->audit(
-                    'MEDIA_REMOVED',
-                    (int) $row['headID'],
-                    (string) ($row['kind'] ?? ''),
-                    (string) ($row['source_filename'] ?? ''),
-                );
+        // A never-linked row whose inbox file was removed is dead: the office
+        // deleted an unaccepted drop. Nothing was ever served, so no audit.
+        foreach ($known as $filename => $row) {
+            if (! isset($inboxSeen[$filename])
+                && in_array((string) $row['state'], [FamilyMediaModel::STATE_PENDING, FamilyMediaModel::STATE_INVALID], true)
+                && (int) ($row['headID'] ?? 0) === 0) {
+                $this->media->deleteRow((int) $row['mediaID']);
             }
         }
 
-        $counts['missing'] = count($missing);
+        $this->verifyStore($counts);
+
         $reporter->checkpoint($total, $total, $counts);
 
         return $counts;
     }
 
     /**
-     * Resolves one valid inspection into a registry state. A known source
-     * filename always wins over the current control lookup, so an already-linked
-     * file keeps its head even after the mapping is retired.
+     * Reconciles one inbox file into the registry. A known source filename
+     * always wins over the current control lookup, so an already-linked file
+     * keeps its head even after the mapping is retired. Every successful link
+     * or replacement moves the file out of the inbox into the store.
      *
      * @param array<string, mixed>      $file
      * @param array<string, mixed>|null $row
@@ -146,6 +157,7 @@ class FamilyMediaReconciler
                 (string) ($row['media_url'] ?? ''),
                 $this->fingerprint($file),
             )) {
+                $this->storage->moveToStore($filename, $headId, $kind);
                 $counts['replaced']++;
                 $this->audit('MEDIA_REPLACED', $headId, $kind, $filename);
             }
@@ -169,6 +181,7 @@ class FamilyMediaReconciler
                 $this->urlFor($retainedHeadId, $kind),
                 $this->fingerprint($file),
             )) {
+                $this->storage->moveToStore($filename, $retainedHeadId, $kind);
                 $counts['linked']++;
                 $this->audit('MEDIA_ADDED', $retainedHeadId, $kind, $filename);
 
@@ -197,6 +210,7 @@ class FamilyMediaReconciler
             );
 
             if ($mediaId > 0) {
+                $this->storage->moveToStore($filename, $headId, $kind);
                 $counts['replaced']++;
                 $this->audit('MEDIA_REPLACED', $headId, $kind, $filename);
             }
@@ -209,11 +223,90 @@ class FamilyMediaReconciler
         }
 
         if ($ownId > 0 && $this->media->link($ownId, $headId, $this->urlFor($headId, $kind), $this->fingerprint($file))) {
+            $this->storage->moveToStore($filename, $headId, $kind);
             $counts['linked']++;
             $this->audit('MEDIA_ADDED', $headId, $kind, $filename);
         } else {
             // The mapped member is not a family head, or the link was refused: stay pending.
             $counts['pending']++;
+        }
+    }
+
+    /**
+     * Verifies every attached registry row against its stored file, so office
+     * edits made directly in a family's store folder are picked up without a
+     * re-drop: a changed file is re-validated and fingerprinted, a deleted file
+     * marks the row missing, and a restored or corrected file links again.
+     *
+     * @param array<string, int> $counts
+     */
+    private function verifyStore(array &$counts): void
+    {
+        foreach ($this->media->attachedRows() as $row) {
+            $mediaId = (int) ($row['mediaID'] ?? 0);
+            $headId = (int) ($row['headID'] ?? 0);
+            $kind = (string) ($row['kind'] ?? '');
+            $filename = (string) ($row['source_filename'] ?? '');
+            $state = (string) ($row['state'] ?? '');
+
+            if ($mediaId <= 0 || $headId <= 0) {
+                continue;
+            }
+
+            $stat = $this->storage->storedMetadata($headId, $kind);
+
+            if ($stat === null) {
+                if ($state === FamilyMediaModel::STATE_LINKED) {
+                    // The family's file was deleted from the store: stop serving
+                    // it and say so on the audit page. headID is retained.
+                    $this->media->markMissing($mediaId);
+                    $counts['missing']++;
+                    $this->audit('MEDIA_REMOVED', $headId, $kind, $filename);
+                } elseif ($state === FamilyMediaModel::STATE_INVALID) {
+                    $this->media->markMissing($mediaId);
+                }
+
+                continue;
+            }
+
+            $unchanged = (int) ($row['byte_size'] ?? 0) === $stat['byte_size']
+                && (string) ($row['source_modified_at'] ?? '') === $stat['source_modified_at'];
+
+            if ($unchanged && $state === FamilyMediaModel::STATE_LINKED) {
+                $this->media->touchSeen($mediaId);
+
+                continue;
+            }
+
+            // A changed file, a restored missing file, or a corrected invalid
+            // one: re-validate the real bytes before anything is served.
+            $inspection = $this->storage->inspectStored($headId, $kind, $filename);
+
+            if ($inspection === null) {
+                if ($state === FamilyMediaModel::STATE_LINKED) {
+                    // The office replaced a served file with bytes that no longer
+                    // pass validation: stop serving it but keep the attachment,
+                    // so correcting the file in place links it again.
+                    $this->media->markInvalid($mediaId);
+                    $counts['invalid']++;
+                }
+
+                continue;
+            }
+
+            if ($this->media->link($mediaId, $headId, $this->urlFor($headId, $kind), $this->fingerprint($inspection))) {
+                $this->media->touchSeen($mediaId);
+
+                if ($state === FamilyMediaModel::STATE_LINKED) {
+                    $counts['replaced']++;
+                    $this->audit('MEDIA_REPLACED', $headId, $kind, $filename);
+                } else {
+                    // Restored after deletion, or corrected after an invalid
+                    // edit: the family has this media again.
+                    $counts['linked']++;
+                    $this->audit('MEDIA_ADDED', $headId, $kind, $filename);
+                }
+            }
         }
     }
 

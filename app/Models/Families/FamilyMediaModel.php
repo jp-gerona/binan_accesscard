@@ -219,29 +219,74 @@ class FamilyMediaModel extends Model
     }
 
     /**
-     * Marks registry rows absent from the latest source scan as missing.
-     *
-     * @param string[] $seenFilenames
-     * @return array<int, array<string, mixed>> rows newly marked missing
+     * Every registry row attached to a head, whatever its serving state: the
+     * linked files the store verification keeps healthy, plus invalid and
+     * missing rows that still remember their head so a corrected or restored
+     * store file can link again.
      */
-    public function markMissingExcept(array $seenFilenames): array
+    public function attachedRows(): array
     {
-        $seen = array_values(array_unique(array_filter(
-            $seenFilenames,
-            static fn (mixed $filename): bool => is_string($filename) && $filename !== '',
-        )));
+        return $this->groupStart()
+            ->where('state', self::STATE_LINKED)
+            ->orWhere('state', self::STATE_INVALID)
+            ->orWhere('state', self::STATE_MISSING)
+            ->groupEnd()
+            ->where('headID >', 0)
+            ->findAll();
+    }
 
-        $builder = $this->db->table($this->table)->where('state !=', self::STATE_MISSING);
-        if ($seen !== []) {
-            $builder->whereNotIn('source_filename', $seen);
+    /**
+     * Marks one attached row missing: its stored file is gone. headID is kept
+     * so the family the file belonged to survives card replacement and a later
+     * restore can re-link without the control mapping.
+     */
+    public function markMissing(int $mediaId): bool
+    {
+        if ($mediaId <= 0) {
+            return false;
         }
 
-        $rows = $builder->get()->getResultArray();
-        foreach ($rows as $row) {
-            $this->update((int) $row['mediaID'], ['state' => self::STATE_MISSING]);
+        return $this->update($mediaId, [
+            'state' => self::STATE_MISSING,
+        ]);
+    }
+
+    /**
+     * Marks one attached row invalid: its stored file no longer passes content
+     * validation, so it must not be served, while the head attachment is kept
+     * for the office to correct the file in place.
+     */
+    public function markInvalid(int $mediaId): bool
+    {
+        if ($mediaId <= 0) {
+            return false;
         }
 
-        return $rows;
+        return $this->update($mediaId, [
+            'state' => self::STATE_INVALID,
+        ]);
+    }
+
+    /**
+     * Drops a row that never linked to a family, because its inbox file was
+     * removed before a head resolved. Nothing was ever served, so no audit row
+     * is written.
+     */
+    public function deleteRow(int $mediaId): bool
+    {
+        if ($mediaId <= 0) {
+            return false;
+        }
+
+        return $this->delete($mediaId);
+    }
+
+    /** Stamps a row's last_seen_at for the current scan. */
+    public function touchSeen(int $mediaId): void
+    {
+        if ($mediaId > 0) {
+            $this->update($mediaId, ['last_seen_at' => date('Y-m-d H:i:s')]);
+        }
     }
 
     /** True when an ID names a self-referencing member row, the schema's definition of a head. */
