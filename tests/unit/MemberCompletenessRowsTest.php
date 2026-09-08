@@ -49,8 +49,8 @@ final class MemberCompletenessRowsTest extends CIUnitTestCase
 
         $rows = (new MemberModel())->completenessRows();
 
-        $this->assertSame([1, 2], array_column($rows['heads'], 'memberID'));
-        $this->assertSame([3], array_column($rows['members'], 'memberID'));
+        $this->assertSame([1, 2], array_map('intval', array_column($rows['heads'], 'memberID')));
+        $this->assertSame([3], array_map('intval', array_column($rows['members'], 'memberID')));
         $this->assertArrayHasKey('salary', $rows['heads'][0]);
         $this->assertArrayHasKey('relationship', $rows['members'][0]);
         $this->assertArrayNotHasKey('contactnumber', $rows['heads'][0]);
