@@ -437,8 +437,27 @@
 
     function buildInput(field) {
         var input = el('input', 'form-control form-control-sm');
-        input.type = 'text';
-        input.value = field.value || '';
+        input.type = field.field === 'birthday' ? 'date' : 'text';
+        
+        var val = field.value || '';
+        if (field.field === 'birthday' && val) {
+            var parts = val.split(/[-/]/).map(function(s) { return s.trim(); });
+            if (parts.length === 3) {
+                var y, m, d;
+                if (parts[0].length === 4) {
+                    y = parts[0]; m = parts[1]; d = parts[2];
+                } else if (parts[2].length === 4) {
+                    y = parts[2]; m = parts[0]; d = parts[1];
+                }
+                if (y && m && d) {
+                    m = m.length === 1 ? '0' + m : m;
+                    d = d.length === 1 ? '0' + d : d;
+                    val = y + '-' + m + '-' + d;
+                }
+            }
+        }
+        
+        input.value = val;
 
         return input;
     }

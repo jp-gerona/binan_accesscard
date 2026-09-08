@@ -7,6 +7,7 @@ use App\Models\Families\MemberModel;
 use App\Models\Lookups\SectorModel;
 use App\Models\Lookups\ServiceModel;
 use App\Models\Scanner\QrControlModel;
+use App\Support\FamilyAgeEligibility;
 use App\Support\FamilyProfilingFormV2;
 use App\Support\MemberFieldNormalizer;
 use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
@@ -106,7 +107,8 @@ class FamilyExcelImporter
 
     private int $groupCount = 0;
 
-    // Cached DB lookups (reference data) so re-validation on each edit stays cheap.
+    private ?array $sectorRows  = null;
+    private ?array $serviceRows = null;
     private ?array $sectorByCode  = null;
     private ?array $serviceByCode = null;
     private ?array $incomeByLabel = null;
@@ -556,6 +558,14 @@ class FamilyExcelImporter
             $payload    = $this->buildPersonPayload($entry, $familyNo, false, $sectorByCode, $incomeByLabel);
             $serviceIds = $this->mapServices($entry, $familyNo, $serviceByCode);
 
+            $this->validateAgeEligibility(
+                (int) $entry['row'],
+                $familyNo,
+                (string) ($payload['birthday'] ?? ''),
+                $payload['sector_ids'] ?? [],
+                $serviceIds
+            );
+
             $memberName = $this->personName($payload);
 
             $key = $this->identityKey(
@@ -568,7 +578,7 @@ class FamilyExcelImporter
             // Already in this very family: the write step skips them (memberExistsUnderHead),
             // so promising an ADD would be a lie. Don't queue the append - report the truth.
             if ($match !== null && (int) $match['qr'] === (int) $familyNo) {
-                $this->addError((int) $entry['row'], $familyNo, 'DUP-DB', null,
+                $this->addError((int) $entry['row'], $familyNo, 'DUP-DB', 'familyno',
                     ($memberName !== '' ? $memberName : 'This person') . ' is already in family ' . $familyNo
                     . ($headName !== '' ? ' (' . $headName . ')' : '')
                     . ' - this row will be skipped, nothing is added twice.', 'warning');
@@ -584,7 +594,7 @@ class FamilyExcelImporter
                 'serviceIds' => $serviceIds,
             ];
 
-            $this->addError((int) $entry['row'], $familyNo, 'ADD-MEMBER', null,
+            $this->addError((int) $entry['row'], $familyNo, 'ADD-MEMBER', 'familyno',
                 ($memberName !== '' ? $memberName : 'This person') . ' will be ADDED to existing family ' . $familyNo
                 . ($headName !== '' ? ' (' . $headName . ')' : '')
                 . '. To skip them, delete this row from the file and upload again.', 'warning');
@@ -909,8 +919,16 @@ class FamilyExcelImporter
             // Aggregate: still validate every row's fields so those errors surface now.
             foreach ($rows as $entry) {
                 $isHead = strcasecmp(trim((string) ($entry['data']['relationship'] ?? '')), 'Head') === 0;
-                $this->buildPersonPayload($entry, $familyNo, $isHead, $sectorByCode, $incomeByLabel);
-                $this->mapServices($entry, $familyNo, $serviceByCode);
+                $payload = $this->buildPersonPayload($entry, $familyNo, $isHead, $sectorByCode, $incomeByLabel);
+                $serviceIds = $this->mapServices($entry, $familyNo, $serviceByCode);
+                
+                $this->validateAgeEligibility(
+                    (int) $entry['row'],
+                    $familyNo,
+                    (string) ($payload['birthday'] ?? ''),
+                    $payload['sector_ids'] ?? [],
+                    $serviceIds
+                );
             }
 
             return;
@@ -918,6 +936,14 @@ class FamilyExcelImporter
 
         $headPayload    = $this->buildPersonPayload($heads[0], $familyNo, true, $sectorByCode, $incomeByLabel);
         $headServiceIds = $this->mapServices($heads[0], $familyNo, $serviceByCode);
+
+        $this->validateAgeEligibility(
+            (int) $heads[0]['row'],
+            $familyNo,
+            (string) ($headPayload['birthday'] ?? ''),
+            $headPayload['sector_ids'] ?? [],
+            $headServiceIds
+        );
 
         // A QR already on file proves only that SOME family owns it - never that it is this
         // one. Check the incoming head IS the stored head before calling the group a
@@ -935,10 +961,20 @@ class FamilyExcelImporter
             // never retype it.
             $memberPayload['address'] = $headPayload['address'];
             $memberPayload['barangayID'] = $headPayload['barangayID'];
+            
+            $memberServiceIds = $this->mapServices($memberEntry, $familyNo, $serviceByCode);
+
+            $this->validateAgeEligibility(
+                (int) $memberEntry['row'],
+                $familyNo,
+                (string) ($memberPayload['birthday'] ?? ''),
+                $memberPayload['sector_ids'] ?? [],
+                $memberServiceIds
+            );
 
             $memberPayloads[] = [
                 'payload'    => $memberPayload,
-                'serviceIds' => $this->mapServices($memberEntry, $familyNo, $serviceByCode),
+                'serviceIds' => $memberServiceIds,
             ];
         }
 
@@ -1124,7 +1160,7 @@ class FamilyExcelImporter
 
         // Blank rows do not split blocks; reaching here means another populated QR block
         // did. It is safe only because the blocks did not prove different families.
-        $this->addError((int) $blocks[0][0]['row'], $familyNo, 'QR-CONTIG', null,
+        $this->addError((int) $blocks[0][0]['row'], $familyNo, 'QR-CONTIG', 'familyno',
             'Family ' . $familyNo . ' rows are not next to each other. This can happen after sorting or pasting - check the grouping.', 'warning');
 
         return $hasBlockingIssue;
@@ -1415,6 +1451,43 @@ class FamilyExcelImporter
         return null;
     }
 
+    /** Validates sector/service age rules (e.g. SC must be >= 60). */
+    private function validateAgeEligibility(int $row, string $familyNo, string $birthday, array $sectorIds, array $serviceIds): void
+    {
+        if ($this->sectorRows === null) {
+            if ($this->sectorByCode !== null) {
+                $this->sectorRows = [];
+                foreach ($this->sectorByCode as $code => $id) {
+                    $this->sectorRows[] = ['sectorID' => $id, 'shortcode' => $code];
+                }
+            } else {
+                $this->sectorCodeMap();
+            }
+        }
+        if ($this->serviceRows === null) {
+            if ($this->serviceByCode !== null) {
+                $this->serviceRows = [];
+                foreach ($this->serviceByCode as $code => $id) {
+                    $this->serviceRows[] = ['serviceID' => $id, 'shortcode' => $code, 'category' => $code];
+                }
+            } else {
+                $this->serviceCodeMap();
+            }
+        }
+
+        $error = FamilyAgeEligibility::selectionError(
+            $birthday,
+            $sectorIds,
+            $serviceIds,
+            $this->sectorRows,
+            $this->serviceRows
+        );
+
+        if ($error !== null) {
+            $this->addError($row, $familyNo, 'AGE-ELIG', 'birthday', $error, 'blocking');
+        }
+    }
+
     /**
      * Maps a row's comma-separated sector codes to IDs. Every canonical token must
      * exist in the reference lookup: an unknown token blocks the import rather than
@@ -1627,13 +1700,13 @@ class FamilyExcelImporter
         }
 
         // Same person, same family: a re-upload. The write step skips it.
-        $this->addError($row, $familyNo, 'DUP-EXISTS', null,
+        $this->addError($row, $familyNo, 'DUP-EXISTS', 'familyno',
             'Family ' . $familyNo . ' is already in the system (' . $stored . '). It will be skipped if you import.', 'warning');
 
         $differences = $this->comparePersonToRecord($headPayload, $record);
 
         if ($differences !== []) {
-            $this->addError($row, $familyNo, 'DUP-DIFF', null,
+            $this->addError($row, $familyNo, 'DUP-DIFF', 'familyno',
                 'Family ' . $familyNo . ' (' . $stored . ') is already in the system, but the file does not match what is stored: '
                 . implode('; ', $differences)
                 . '. Families already on file are SKIPPED, so these changes will NOT be saved - edit the record in Manage Family instead.', 'warning');
@@ -1712,7 +1785,7 @@ class FamilyExcelImporter
                 $isHead = strcasecmp(trim((string) ($data['relationship'] ?? '')), 'Head') === 0;
                 $where  = $match['qr'] > 0 ? 'family ' . $match['qr'] : 'another family';
 
-                $this->addError((int) $entry['row'], (string) $qr, 'DUP-DB', null,
+                $this->addError((int) $entry['row'], (string) $qr, 'DUP-DB', 'familyno',
                     $match['name'] . ' is already in the system under ' . $where
                     . ($isHead
                         ? '. A family whose head is already on file is SKIPPED on import - this whole group, members and all, will NOT be saved. Check the QR number, or delete these rows from the file.'
@@ -1830,8 +1903,9 @@ class FamilyExcelImporter
         }
 
         $map = [];
+        $this->sectorRows = (new SectorModel())->getActive();
 
-        foreach ((new SectorModel())->getActive() as $sector) {
+        foreach ($this->sectorRows as $sector) {
             $code = strtoupper(trim((string) ($sector['shortcode'] ?? '')));
             $id   = (int) ($sector['sectorID'] ?? 0);
 
@@ -1851,8 +1925,9 @@ class FamilyExcelImporter
         }
 
         $map = [];
+        $this->serviceRows = (new ServiceModel())->getActive();
 
-        foreach ((new ServiceModel())->getActive() as $service) {
+        foreach ($this->serviceRows as $service) {
             $code = strtoupper(trim((string) ($service['shortcode'] ?? '')));
             $id   = (int) ($service['serviceID'] ?? 0);
 

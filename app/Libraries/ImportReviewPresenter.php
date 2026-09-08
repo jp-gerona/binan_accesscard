@@ -47,6 +47,7 @@ class ImportReviewPresenter
         'INCOME'     => ['label' => 'Invalid monthly income',      'hint' => 'Not a bracket or readable amount; imports with no income. The family is listed on the Data Completeness report.'],
         'SERVICE'    => ['label' => 'Invalid Service Code',        'hint' => 'The code is not on the Reference sheet. Choose a listed service code before importing.'],
         'LENGTH'     => ['label' => 'Value too long',              'hint' => 'Shorten it to fit the database limit.'],
+        'AGE-ELIG'   => ['label' => 'Age eligibility mismatch',    'hint' => 'The person\'s age does not qualify for their assigned sector or service.'],
         'ADD-MEMBER' => ['label' => 'Will be added to an existing family', 'hint' => 'The QR already belongs to a family. These people are ADDED to it on import - to skip one, delete the row from the file.'],
         'DUP-EXISTS' => ['label' => 'Already in the system',       'hint' => 'Same QR, same head (name + birthday) as a family already on file. SKIPPED on import.'],
         'DUP-DB'     => ['label' => 'Person already in the system','hint' => 'This person is already on file under another family. A HEAD already on file means the whole group is skipped - check the QR.'],
@@ -346,30 +347,40 @@ class ImportReviewPresenter
         $byField = [];
 
         foreach ($errors as $error) {
-            $field = $error['field'] ?? null;
+            $baseField = $error['field'] ?? null;
+            $code      = (string) ($error['code'] ?? '');
 
-            // A field-less code has nothing to type into; it stays in issuesFor().
-            if ($field === null || ! isset(self::FIELD_LABELS[(string) $field])) {
-                continue;
+            $fieldsToOpen = [];
+            if ($baseField !== null) {
+                $fieldsToOpen[] = (string) $baseField;
+            }
+            if ($code === 'AGE-ELIG') {
+                $fieldsToOpen[] = 'sector';
+                $fieldsToOpen[] = 'services';
             }
 
-            $field    = (string) $field;
-            $severity = (($error['severity'] ?? 'blocking') === 'blocking') ? 'blocking' : 'warning';
+            foreach (array_unique($fieldsToOpen) as $field) {
+                if (! isset(self::FIELD_LABELS[$field])) {
+                    continue;
+                }
 
-            if (isset($byField[$field]) && ($byField[$field]['severity'] === 'blocking' || $severity !== 'blocking')) {
-                continue;
+                $severity = (($error['severity'] ?? 'blocking') === 'blocking') ? 'blocking' : 'warning';
+
+                if (isset($byField[$field]) && ($byField[$field]['severity'] === 'blocking' || $severity !== 'blocking')) {
+                    continue;
+                }
+
+                $letter = isset($columns[$field]) ? (string) $columns[$field] : '';
+
+                $byField[$field] = [
+                    'field'    => $field,
+                    'label'    => self::FIELD_LABELS[$field],
+                    'cell'     => $letter !== '' ? $letter . $sheetRow : '',
+                    'value'    => (string) ($data[$field] ?? ''),
+                    'severity' => $severity,
+                    'message'  => (string) ($error['message'] ?? ''),
+                ];
             }
-
-            $letter = isset($columns[$field]) ? (string) $columns[$field] : '';
-
-            $byField[$field] = [
-                'field'    => $field,
-                'label'    => self::FIELD_LABELS[$field],
-                'cell'     => $letter !== '' ? $letter . $sheetRow : '',
-                'value'    => (string) ($data[$field] ?? ''),
-                'severity' => $severity,
-                'message'  => (string) ($error['message'] ?? ''),
-            ];
         }
 
         return array_values($byField);
