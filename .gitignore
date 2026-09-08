@@ -164,6 +164,7 @@ _modules/*
 # Superpowers (local scratch; specs/plans/summaries are tracked under docs/)
 #-------------------------
 .superpowers/
+.worktrees/
 docs/superpowers/plans/
 docs/superpowers/summaries/
 docs/superpowers/summary/

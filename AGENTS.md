@@ -19,7 +19,7 @@ explains it properly. These are not preferences.
    See `docs/02-database.md`.
 
 2. **Column names, enum values, and role names match the current dump
-   exactly** (`accesscardV22.sql`). A name invented in code fails at runtime, not
+   exactly** (`accesscardV23.sql`). A name invented in code fails at runtime, not
    at lint time, and the SQLite test path may not catch it either. Enum values
    are case-sensitive: `sex` is `MALE`/`FEMALE`. The encoding role is `encoder`
    in the schema, the code, and the interface. See `docs/02-database.md`.

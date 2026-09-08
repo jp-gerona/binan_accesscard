@@ -27,6 +27,8 @@
     var redirectUrl = root.dataset.redirectUrl;
     var rowsUrl      = root.dataset.rowsUrl;
     var applyUrl     = root.dataset.applyUrl;
+    var resolveDuplicateUrl = root.dataset.resolveDuplicateUrl;
+    var restoreUrl   = root.dataset.restoreUrl;
     var searchEl     = document.getElementById('importReviewSearch');
     var perPageEl    = document.getElementById('importReviewPerPage');
     var codeFilterEl = document.getElementById('importReviewCodeFilter');
@@ -211,7 +213,7 @@
         if (!rows.length) {
             var empty = el('tr');
             var cell = el('td', 'text-center text-muted py-4', 'No people match this filter.');
-            cell.colSpan = 7;
+            cell.colSpan = 9;
             empty.appendChild(cell);
             tbody.appendChild(empty);
         }
@@ -233,28 +235,40 @@
 
     function personRow(row) {
         var flagged = !!row.severity;
-        var tr = el('tr', flagged ? (row.severity === 'blocking' ? 'table-danger' : 'table-warning') : '');
+        var tr = el('tr', row.discarded ? 'table-secondary import-review-discarded' : (flagged ? (row.severity === 'blocking' ? 'table-danger' : 'table-warning') : ''));
         tr.dataset.row = row.sheetRow;
 
-        tr.appendChild(statusCell(row.severity));
-        tr.appendChild(el('td', null, row.family || ''));
+        tr.appendChild(statusCell(row));
+        tr.appendChild(el('td', 'font-monospace text-nowrap', String(row.sheetRow)));
+        tr.appendChild(el('td', 'text-nowrap', row.qr || ''));
         tr.appendChild(el('td', null, row.role || ''));
         tr.appendChild(el('td', null, (row.values || {}).lastname || ''));
-        tr.appendChild(el('td', null, (row.values || {}).firstname || ''));
-        tr.appendChild(issuesCell(row.issues || []));
+        tr.appendChild(el('td', 'text-nowrap', (row.values || {}).firstname || ''));
+        tr.appendChild(el('td', null, (row.values || {}).middlename || ''));
+        tr.appendChild(issuesCell(row.issues || [], !!row.discarded));
         tr.appendChild(openCell(row));
 
         return tr;
     }
 
-    function statusCell(severity) {
+    function statusCell(row) {
         var td = el('td', 'text-center import-review-status-col');
 
-        if (!severity) {
+        if (row.discarded) {
+            var discardedIcon = el('i', 'bi bi-arrow-return-left text-muted');
+            discardedIcon.setAttribute('aria-hidden', 'true');
+            discardedIcon.title = 'Discarded';
+            td.appendChild(discardedIcon);
+            td.appendChild(el('span', 'visually-hidden', 'Discarded'));
+
             return td;
         }
 
-        var blocking = severity === 'blocking';
+        if (!row.severity) {
+            return td;
+        }
+
+        var blocking = row.severity === 'blocking';
         var icon = el('i', 'bi ' + (blocking ? 'bi-exclamation-triangle-fill text-danger' : 'bi-exclamation-circle-fill text-warning'));
         icon.setAttribute('aria-hidden', 'true');
         icon.title = blocking ? 'Must fix' : 'Warning';
@@ -266,14 +280,14 @@
 
     // Every distinct problem on the row, including the informational ones that offer
     // nothing to edit: a row that will be skipped must say so.
-    function issuesCell(issues) {
+    function issuesCell(issues, discarded) {
         var td = el('td');
         var list = el('div', 'import-review-issues');
 
         issues.forEach(function (issue) {
             var badge = el('span',
-                'badge ' + (issue.severity === 'blocking' ? 'text-bg-danger' : 'text-bg-warning'),
-                issue.label);
+                'badge ' + (discarded ? 'text-bg-secondary' : (issue.severity === 'blocking' ? 'text-bg-danger' : 'text-bg-warning')),
+                (issue.cell ? issue.cell + ' · ' : '') + issue.label);
             badge.title = issue.message || '';
             list.appendChild(badge);
         });
@@ -283,11 +297,21 @@
         return td;
     }
 
-    // Only a row with something to type into gets a toggle.
+    // Discarded rows only restore. Active duplicate rows use the same toggle as normal
+    // editors, so a field correction remains available beside the focused resolver.
     function openCell(row) {
         var td = el('td', 'text-end import-review-open-col');
 
-        if (!(row.fields || []).length) {
+        if (row.discarded) {
+            var restore = el('button', 'btn btn-sm btn-outline-secondary js-import-restore', 'Restore');
+            restore.type = 'button';
+            restore.dataset.row = row.sheetRow;
+            td.appendChild(restore);
+
+            return td;
+        }
+
+        if (!(row.fields || []).length && !row.duplicateGroup) {
             return td;
         }
 
@@ -309,7 +333,7 @@
         tr.dataset.panelFor = row.sheetRow;
 
         var td = el('td', 'bg-body-tertiary');
-        td.colSpan = 7;
+        td.colSpan = 9;
 
         var wrap = el('div', 'p-3');
         var grid = el('div', 'row g-2');
@@ -318,22 +342,68 @@
             grid.appendChild(fieldControl(field, row.sheetRow));
         });
 
-        wrap.appendChild(grid);
+        if ((row.fields || []).length) {
+            wrap.appendChild(grid);
+        }
 
-        var actions = el('div', 'd-flex justify-content-end gap-2 mt-3');
-        var discard = el('button', 'btn btn-link js-import-discard', 'Discard');
-        discard.type = 'button';
-        var apply = el('button', 'btn btn-primary js-import-apply', 'Apply');
-        apply.type = 'button';
-        apply.dataset.row = row.sheetRow;
-        actions.appendChild(discard);
-        actions.appendChild(apply);
-        wrap.appendChild(actions);
+        if (row.duplicateGroup) {
+            wrap.appendChild(duplicateComparison(row));
+        }
+
+        if ((row.fields || []).length) {
+            var actions = el('div', 'd-flex justify-content-end gap-2 mt-3');
+            var discard = el('button', 'btn btn-secondary js-import-discard', 'Discard');
+            discard.type = 'button';
+            var apply = el('button', 'btn btn-primary js-import-apply', 'Apply');
+            apply.type = 'button';
+            apply.dataset.row = row.sheetRow;
+            actions.appendChild(discard);
+            actions.appendChild(apply);
+            wrap.appendChild(actions);
+        }
 
         td.appendChild(wrap);
         tr.appendChild(td);
 
         return tr;
+    }
+
+    // Candidate details are presentation data from the presenter, not markup: every
+    // spreadsheet value is placed through textContent by el() before it reaches the DOM.
+    function duplicateComparison(row) {
+        var group = row.duplicateGroup || {};
+        var panel = el('section', 'js-import-duplicate-panel mt-3 pt-3 border-top');
+        panel.appendChild(el('h3', 'h6 mb-2', 'Choose the one duplicate row to keep'));
+        panel.appendChild(el('p', 'small text-muted mb-3', 'All other matching rows will be discarded from this import.'));
+
+        var candidates = Array.isArray(group.candidates) && group.candidates.length
+            ? group.candidates
+            : (group.rows || []).map(function (sheetRow) {
+                var candidate = rowsBySheetRow[sheetRow] || {};
+                return { sheetRow: sheetRow, role: candidate.role || '', values: candidate.values || {} };
+            });
+        var grid = el('div', 'row g-2');
+
+        candidates.forEach(function (candidate) {
+            var column = el('div', 'col-12 col-md-6 col-xl-4');
+            var card = el('div', 'border rounded p-3 h-100');
+            card.appendChild(el('strong', 'd-block', 'Row ' + candidate.sheetRow));
+            card.appendChild(el('span', 'small text-muted d-block mb-2', candidate.role || 'Member'));
+            var values = candidate.values || {};
+            card.appendChild(el('div', 'small mb-3', [
+                values.lastname, values.firstname, values.middlename, values.birthday, values.sex
+            ].filter(Boolean).join(' · ')));
+            var keep = el('button', 'btn btn-sm btn-primary js-import-keep-duplicate', 'Keep this row');
+            keep.type = 'button';
+            keep.dataset.keepRow = candidate.sheetRow;
+            card.appendChild(keep);
+            column.appendChild(card);
+            grid.appendChild(column);
+        });
+
+        panel.appendChild(grid);
+
+        return panel;
     }
 
     function fieldControl(field, sheetRow) {
@@ -482,16 +552,9 @@
             updateCounts(data.counts);
             updateCodeFilter(data.codes);
 
-            // These fields drive rules that reach other rows, so the rest of the page
-            // cannot be trusted to be current: refetch instead of splicing.
-            if (data.refresh) {
-                loadRows();
-                setStatus('Applied.');
-
-                return;
-            }
-
-            replaceRow(sheetRow, data.row);
+            // A correction can change duplicate membership or discarded state on another
+            // row. Always refetch this page rather than trusting a single-row response.
+            loadRows();
             setStatus('Applied.');
         }).catch(function () {
             setBusy(panel, false);
@@ -499,22 +562,54 @@
         });
     }
 
-    function replaceRow(sheetRow, row) {
-        var tr = tbody.querySelector('tr[data-row="' + sheetRow + '"]');
-        var panel = tbody.querySelector('[data-panel-for="' + sheetRow + '"]');
-
-        if (panel) {
-            panel.remove();
-        }
-
-        if (!tr || !row) {
-            loadRows();
-
+    function resolveDuplicate(keepRow) {
+        if (!resolveDuplicateUrl) {
             return;
         }
 
-        rowsBySheetRow[sheetRow] = row;
-        tr.replaceWith(personRow(row));
+        setStatus('Resolving duplicate...');
+        postForm(resolveDuplicateUrl, { keep_row: keepRow }).then(function (result) {
+            var data = result.data || {};
+            refreshCsrf(data.csrf);
+
+            if (!result.ok) {
+                setStatus(data.message || 'The duplicate decision could not be applied.');
+
+                return;
+            }
+
+            updateCounts(data.counts);
+            updateCodeFilter(data.codes);
+            loadRows();
+            setStatus(data.message || 'Duplicate copies discarded.');
+        }).catch(function () {
+            setStatus('A network error occurred. Please try again.');
+        });
+    }
+
+    function restoreRow(sheetRow) {
+        if (!restoreUrl) {
+            return;
+        }
+
+        setStatus('Restoring...');
+        postForm(restoreUrl, { import_row: sheetRow }).then(function (result) {
+            var data = result.data || {};
+            refreshCsrf(data.csrf);
+
+            if (!result.ok) {
+                setStatus(data.message || 'The row could not be restored.');
+
+                return;
+            }
+
+            updateCounts(data.counts);
+            updateCodeFilter(data.codes);
+            loadRows();
+            setStatus(data.message || 'Duplicate row restored.');
+        }).catch(function () {
+            setStatus('A network error occurred. Please try again.');
+        });
     }
 
     function updateCounts(counts) {
@@ -530,6 +625,9 @@
         });
         root.querySelectorAll('[data-count="warnings"]').forEach(function (node) {
             node.textContent = Number(counts.warnings || 0);
+        });
+        root.querySelectorAll('[data-count="discarded"]').forEach(function (node) {
+            node.textContent = Number(counts.discarded || 0);
         });
 
         confirmBtn.disabled = blocking > 0;
@@ -782,6 +880,22 @@
     // -- wire up ---------------------------------------------------------------
 
     root.addEventListener('click', function (event) {
+        var keep = event.target.closest ? event.target.closest('.js-import-keep-duplicate') : null;
+
+        if (keep) {
+            resolveDuplicate(keep.dataset.keepRow);
+
+            return;
+        }
+
+        var restore = event.target.closest ? event.target.closest('.js-import-restore') : null;
+
+        if (restore) {
+            restoreRow(restore.dataset.row);
+
+            return;
+        }
+
         var open = event.target.closest ? event.target.closest('.js-import-open') : null;
 
         if (open) {

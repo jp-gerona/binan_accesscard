@@ -43,18 +43,28 @@ class FamilyExcelImporter
     public const QR_MAX = 2147483647;
 
     /**
-     * Common suffix spellings → the canonical dropdown value (Jr/Sr/I-V). Keys are
+     * Common suffix spellings → the canonical dropdown value (JR/SR/I-V). Keys are
      * lowercased with dots removed. Lets "Junior", "the 3rd", "2nd" map to a valid enum
      * value instead of being dropped, so the DB never sees an out-of-enum suffix.
      */
     private const SUFFIX_ALIASES = [
-        'jr' => 'Jr', 'junior' => 'Jr',
-        'sr' => 'Sr', 'senior' => 'Sr',
+        'jr' => 'JR', 'junior' => 'JR',
+        'sr' => 'SR', 'senior' => 'SR',
         'i' => 'I', '1' => 'I', '1st' => 'I', 'first' => 'I',
         'ii' => 'II', '2' => 'II', '2nd' => 'II', 'second' => 'II',
         'iii' => 'III', '3' => 'III', '3rd' => 'III', 'third' => 'III',
         'iv' => 'IV', '4' => 'IV', '4th' => 'IV', 'fourth' => 'IV',
         'v' => 'V', '5' => 'V', '5th' => 'V', 'fifth' => 'V',
+    ];
+
+    /**
+     * Curated typo variants measured in real files -> the canonical code. Anything
+     * not here is resolved by spacing/case normalisation or rejected as invalid.
+     */
+    private const SERVICE_ALIASES = [
+        'ED8A' => 'EDA8',
+        'EDAI' => 'EDA8',
+        'SCI'  => 'SC1',
     ];
 
     /** @var list<array{familyNo: string, headName: string, headPayload: array, headServiceIds: int[], memberPayloads: list<array{payload: array, serviceIds: int[]}>}> */
@@ -82,6 +92,9 @@ class FamilyExcelImporter
      * @var array<string, array{name: string, qr: int, headID: int, isHead: bool}>
      */
     private array $existingPeople = [];
+
+    /** @var list<array{rows:list<int>,qr:string}> Exact in-file duplicate row candidates. */
+    private array $duplicateGroups = [];
 
     private int $memberCount = 0;
 
@@ -128,6 +141,7 @@ class FamilyExcelImporter
                 'errors'     => $parsed['errors'],
                 'fileErrors' => $parsed['errors'],
                 'families'   => [],
+                'duplicateGroups' => [],
                 'counts'     => $this->summarize([], $parsed['errors']),
             ];
         }
@@ -146,8 +160,28 @@ class FamilyExcelImporter
             'columns'    => $parsed['columns'] ?? [],
             'families'   => $built['families'],
             'appends'    => $built['appends'],
+            'duplicateGroups' => $built['duplicateGroups'],
             'counts'     => $this->summarize($built['families'], $errors, $built['appends']),
         ];
+    }
+
+    /**
+     * Canonicalizes a row set for review and validation. QR and birthday values stay
+     * intact for their dedicated parsers; all other known textual fields are staged in
+     * their canonical form.
+     *
+     * @param list<array{sheetRow:int|string,data:array<string,string>}> $rows
+     * @return list<array{sheetRow:int|string,data:array<string,string>}>
+     */
+    public function normalizeRows(array $rows): array
+    {
+        foreach ($rows as $index => $entry) {
+            $rows[$index]['data'] = $this->normalizeRow(
+                is_array($entry['data'] ?? null) ? $entry['data'] : []
+            );
+        }
+
+        return $rows;
     }
 
     /**
@@ -222,17 +256,24 @@ class FamilyExcelImporter
         $this->appends        = [];
         $this->existingHeads  = $existingHeads;
         $this->existingPeople = $existingPeople;
+        $this->duplicateGroups = [];
         $this->memberCount    = 0;
         $this->rowCount       = 0;
         $this->groupCount     = 0;
+        $rows                 = $this->normalizeRows($rows);
 
         $sectorByCode  = $this->sectorCodeMap();
         $serviceByCode = $this->serviceCodeMap();
         $incomeByLabel = $this->incomeLabelMap();
 
         // STAGE 3-4: validate + normalise each QR, then group. A row whose QR cannot be
-        // validated is reported and left ungrouped (it has no usable family key).
+        // validated is reported and left ungrouped (it has no usable family key). Blocks
+        // retain the order in which populated QR runs occur; global groups alone cannot
+        // distinguish a second family from a separated continuation.
         $groups = [];
+        $blocksByQr = [];
+        $previousQr = null;
+        $blockIndex = null;
 
         foreach ($rows as $entry) {
             $sheetRow = (int) $entry['sheetRow'];
@@ -250,20 +291,39 @@ class FamilyExcelImporter
 
             if (! $qr['ok']) {
                 $this->addError($sheetRow, (string) ($data['familyno'] ?? ''), $qr['code'], 'familyno', $qr['msg']);
+                // A populated row with no usable QR interrupts a QR block.
+                $previousQr = null;
+                $blockIndex = null;
                 continue;
             }
 
-            $groups[$qr['qr']][] = ['row' => $sheetRow, 'data' => $data];
+            $familyNo = (string) $qr['qr'];
+            $familyRow = ['row' => $sheetRow, 'data' => $data];
+            $groups[$familyNo][] = $familyRow;
+
+            if ($previousQr !== $familyNo) {
+                $blocksByQr[$familyNo][] = [];
+                $blockIndex = array_key_last($blocksByQr[$familyNo]);
+            }
+
+            $blocksByQr[$familyNo][$blockIndex][] = $familyRow;
+            $previousQr = $familyNo;
         }
 
         $this->groupCount = count($groups);
 
         foreach ($groups as $familyNo => $familyRows) {
-            $this->processFamily((string) $familyNo, $familyRows, $sectorByCode, $serviceByCode, $incomeByLabel);
+            $this->processFamily(
+                (string) $familyNo,
+                $familyRows,
+                $blocksByQr[(string) $familyNo],
+                $sectorByCode,
+                $serviceByCode,
+                $incomeByLabel,
+            );
         }
 
-        // Cross-row pass: flag rows that look like the same person (name+birthday+address).
-        $this->checkDuplicatePersons($groups);
+        $this->duplicateGroups = $this->classifyDuplicateRows($groups);
         // Same idea against the DB: people this batch is re-entering under a different QR.
         $this->checkExistingPeople($groups);
 
@@ -271,6 +331,7 @@ class FamilyExcelImporter
             'families' => $this->families,
             'errors'   => $this->errors,
             'appends'  => $this->appends,
+            'duplicateGroups' => $this->duplicateGroups,
             'counts'   => $this->summarize($this->families, $this->errors, $this->appends),
         ];
     }
@@ -691,7 +752,76 @@ class FamilyExcelImporter
             $rows[] = ['sheetRow' => $row, 'data' => $values];
         }
 
-        return $rows;
+        return $this->normalizeRows($rows);
+    }
+
+    /**
+     * Canonicalizes one row's known textual fields while preserving unknown columns
+     * for the review UI.
+     *
+     * @param array<string,string> $data
+     * @return array<string,string>
+     */
+    private function normalizeRow(array $data): array
+    {
+        foreach ([
+            'firstname', 'middlename', 'lastname', 'relationship', 'suffix', 'sex', 'civilstatus', 'contactnumber',
+            'religion', 'education', 'job', 'monthlyincome', 'address', 'barangay',
+            'sector', 'services',
+        ] as $field) {
+            if (array_key_exists($field, $data)) {
+                $data[$field] = MemberFieldNormalizer::blankIfNoData($data[$field]);
+            }
+        }
+
+        foreach (['firstname', 'middlename', 'lastname'] as $field) {
+            if (array_key_exists($field, $data)) {
+                $data[$field] = MemberFieldNormalizer::cleanName($data[$field]);
+            }
+        }
+
+        foreach (['address', 'barangay'] as $field) {
+            if (array_key_exists($field, $data)) {
+                // Staging equality preserves every character except redundant whitespace.
+                $data[$field] = $this->canonicalAddress($data[$field]);
+            }
+        }
+
+        foreach (['relationship', 'sex', 'civilstatus', 'religion', 'education', 'job'] as $field) {
+            if (array_key_exists($field, $data)) {
+                $data[$field] = mb_strtoupper(trim($data[$field]), 'UTF-8');
+            }
+        }
+
+        if (array_key_exists('suffix', $data)) {
+            $data['suffix'] = $this->canonicalSuffix($data['suffix']);
+        }
+
+        foreach (['sector', 'services'] as $field) {
+            if (array_key_exists($field, $data)) {
+                $data[$field] = $this->canonicalCodeList($data[$field]);
+            }
+        }
+
+        return $data;
+    }
+
+    /** Canonicalizes staged addresses without discarding punctuation. */
+    private function canonicalAddress(string $value): string
+    {
+        return mb_strtoupper(
+            trim((string) preg_replace('/\s+/u', ' ', $value)),
+            'UTF-8'
+        );
+    }
+
+    /** Maps a suffix alias to its enum value while retaining invalid input for validation. */
+    private function canonicalSuffix(string $value): string
+    {
+        $value = trim((string) preg_replace('/\s+/u', ' ', str_replace('.', '', $value)));
+        $key   = (string) preg_replace('/^the\s+/', '', mb_strtolower($value, 'UTF-8'));
+
+        return self::SUFFIX_ALIASES[$key] ?? mb_strtoupper($value, 'UTF-8');
     }
 
     /**
@@ -737,11 +867,12 @@ class FamilyExcelImporter
      * persist-ready; field errors on it still block the import via the reviewer's gate.
      *
      * @param list<array{row: int, data: array<string, string>}> $rows
+     * @param list<list<array{row: int, data: array<string, string>}>> $blocks
      * @param array<string, int>    $sectorByCode
      * @param array<string, int>    $serviceByCode
      * @param array<string, string> $incomeByLabel
      */
-    private function processFamily(string $familyNo, array $rows, array $sectorByCode, array $serviceByCode, array $incomeByLabel): void
+    private function processFamily(string $familyNo, array $rows, array $blocks, array $sectorByCode, array $serviceByCode, array $incomeByLabel): void
     {
         $heads   = [];
         $members = [];
@@ -760,7 +891,7 @@ class FamilyExcelImporter
 
         // Family-level coherence (does not early-return - fields are still validated).
         $this->checkFingerprint($familyNo, $rows);
-        $this->checkContiguity($familyNo, $rows);
+        $blockIssue = $this->checkQrBlocks($familyNo, $blocks);
 
         // A headless group whose QR already belongs to a family = members being ADDED to
         // that existing family (the worker's forgotten-member-next-batch case). Instead of
@@ -771,13 +902,10 @@ class FamilyExcelImporter
             return;
         }
 
-        if (count($heads) !== 1) {
+        if (count($heads) === 0 || $blockIssue) {
             if (count($heads) === 0) {
                 [$anchorRow, $message] = $this->headlessDiagnosis($familyNo, $rows);
                 $this->addError($anchorRow, $familyNo, 'HEAD-NONE', 'relationship', $message);
-            } else {
-                $this->addError($heads[1]['row'], $familyNo, 'HEAD-MULTI', 'relationship',
-                    'Family ' . $familyNo . ' has more than one Head row. Only one person can be the Head.');
             }
 
             // Aggregate: still validate every row's fields so those errors surface now.
@@ -931,23 +1059,77 @@ class FamilyExcelImporter
     }
 
     /**
-     * QR-30: a family's rows should sit next to each other. Non-contiguous rows are a
-     * warning (a sort/paste accident) - informational, does not block the import.
+     * Distinguishes a separate household sharing a QR from a harmless separated
+     * continuation. A multiple-head error is local to one contiguous block; heads in
+     * different blocks only conflict when every block has one and their identities differ.
      *
-     * @param list<array{row: int, data: array<string, string>}> $rows
+     * @param list<list<array{row: int, data: array<string, string>}>> $blocks
      */
-    private function checkContiguity(string $familyNo, array $rows): void
+    private function checkQrBlocks(string $familyNo, array $blocks): bool
     {
-        if (count($rows) < 2) {
-            return;
+        $hasBlockingIssue = false;
+        $singleHeads = [];
+
+        foreach ($blocks as $block) {
+            $heads = array_values(array_filter($block, static fn (array $entry): bool =>
+                strcasecmp(trim((string) ($entry['data']['relationship'] ?? '')), 'Head') === 0
+            ));
+
+            if (count($heads) > 1) {
+                $this->addError($heads[1]['row'], $familyNo, 'HEAD-MULTI', 'relationship',
+                    'Family ' . $familyNo . ' has more than one Head in the same contiguous family block. Only one person can be the Head.');
+                $hasBlockingIssue = true;
+            }
+
+            if (count($heads) === 1) {
+                $singleHeads[] = ['head' => $heads[0], 'block' => $block];
+            }
         }
 
-        $nums = array_map(static fn (array $entry): int => (int) $entry['row'], $rows);
-
-        if (max($nums) - min($nums) + 1 !== count($nums)) {
-            $this->addError(min($nums), $familyNo, 'QR-CONTIG', null,
-                'Family ' . $familyNo . ' rows are not next to each other. This can happen after sorting or pasting - check the grouping.', 'warning');
+        if (count($blocks) < 2) {
+            return $hasBlockingIssue;
         }
+
+        // A different-family conflict is provable only when every separated block has
+        // exactly one head. A headless block can be a continuation of the preceding one.
+        if (count($singleHeads) === count($blocks)) {
+            $identities = [];
+
+            foreach ($singleHeads as $item) {
+                $data = $item['head']['data'];
+                $identities[] = implode('|', [
+                    $this->normalizeText((string) ($data['firstname'] ?? '')),
+                    $this->normalizeText((string) ($data['lastname'] ?? '')),
+                    (string) $this->normalizeBirthday((string) ($data['birthday'] ?? '')),
+                ]);
+            }
+
+            if (count(array_unique($identities)) > 1) {
+                $descriptions = [];
+
+                foreach ($singleHeads as $item) {
+                    $block = $item['block'];
+                    $range = (int) $block[0]['row'] . '-' . (int) $block[array_key_last($block)]['row'];
+                    $name = $this->personName($item['head']['data']) ?: 'an unnamed Head';
+                    $descriptions[] = 'rows ' . $range . ' (headed by ' . $name . ')';
+                }
+
+                foreach ($singleHeads as $item) {
+                    $this->addError((int) $item['head']['row'], $familyNo, 'DUP-QR-FAMILY', 'familyno',
+                        'QR ' . $familyNo . ' is used by separate family blocks: ' . implode(' and ', $descriptions)
+                        . '. Give each family its own QR Number.');
+                }
+
+                return true;
+            }
+        }
+
+        // Blank rows do not split blocks; reaching here means another populated QR block
+        // did. It is safe only because the blocks did not prove different families.
+        $this->addError((int) $blocks[0][0]['row'], $familyNo, 'QR-CONTIG', null,
+            'Family ' . $familyNo . ' rows are not next to each other. This can happen after sorting or pasting - check the grouping.', 'warning');
+
+        return $hasBlockingIssue;
     }
 
     /**
@@ -969,35 +1151,43 @@ class FamilyExcelImporter
         $this->requireField($row, $familyNo, 'firstname', 'First Name', $firstName);
         $this->requireField($row, $familyNo, 'lastname', 'Last Name', $lastName);
 
-        // Personal-profile fields are required for EVERY person (head and member), mirroring
-        // the Add/Edit family form. Only the head carries Address/Barangay - members inherit
-        // the head's, so those stay head-only.
-        $birthday = $this->validateBirthday($row, $familyNo, (string) ($data['birthday'] ?? ''), true);
-        $sex      = $this->validateSex($row, $familyNo, (string) ($data['sex'] ?? ''), true);
+        $birthday = $this->validateBirthday($row, $familyNo, (string) ($data['birthday'] ?? ''));
+        $sex      = $this->validateSex($row, $familyNo, (string) ($data['sex'] ?? ''));
 
         $civilStatus = $this->fullValueFromCode((string) ($data['civilstatus'] ?? ''), FamilyExcelTemplate::CIVIL_STATUS_CODES);
         $education   = $this->fullValueFromCode((string) ($data['education'] ?? ''), FamilyExcelTemplate::EDUCATION_CODES);
 
-        $this->requireField($row, $familyNo, 'civilstatus', 'Civil Status', $civilStatus);
-        $this->requireField($row, $familyNo, 'education', 'Education', $education);
-        $this->requireField($row, $familyNo, 'job', 'Job', (string) ($data['job'] ?? ''));
-
-        if ($isHead) {
-            $this->requireField($row, $familyNo, 'address', 'Address', (string) ($data['address'] ?? ''));
-            $this->requireField($row, $familyNo, 'barangay', 'Barangay', (string) ($data['barangay'] ?? ''));
-            // Barangay has no "Other" option - it must be one of the official barangays
-            // (tolerant match). A mismatch blocks the row: there is nowhere to store it.
-            $this->validateBarangay($row, $familyNo, (string) ($data['barangay'] ?? ''));
-        } else {
-            $this->requireField($row, $familyNo, 'relationship', 'Relationship', (string) ($data['relationship'] ?? ''));
+        if (trim($civilStatus) === '') {
+            $this->incompleteField($row, $familyNo, 'civilstatus', 'Civil Status');
+        }
+        if (trim($education) === '') {
+            $this->incompleteField($row, $familyNo, 'education', 'Education');
+        }
+        if (trim((string) ($data['job'] ?? '')) === '') {
+            $this->incompleteField($row, $familyNo, 'job', 'Job');
         }
 
-        $income    = $this->resolveIncome($row, $familyNo, (string) ($data['monthlyincome'] ?? ''), true, $incomeByLabel);
+        if ($isHead) {
+            if (trim((string) ($data['address'] ?? '')) === '') {
+                $this->incompleteField($row, $familyNo, 'address', 'Address');
+            }
+            if (trim((string) ($data['barangay'] ?? '')) === '') {
+                $this->incompleteField($row, $familyNo, 'barangay', 'Barangay');
+            }
+            // Barangay has no "Other" option, so a value that is not an official
+            // barangay resolves to no barangayID (see validateBarangay's warning).
+            $this->validateBarangay($row, $familyNo, (string) ($data['barangay'] ?? ''));
+        } elseif (trim((string) ($data['relationship'] ?? '')) === '') {
+            $this->addError($row, $familyNo, 'INCOMPLETE', 'relationship',
+                'Relationship is blank - this row imports as a Member.', 'warning');
+        }
+
+        $income = $this->resolveIncome($row, $familyNo, (string) ($data['monthlyincome'] ?? ''), $incomeByLabel);
         $sectorIds = $this->mapSectors($entry, $familyNo, $sectorByCode);
 
         // Contact number (optional): warn if present and not 09 + 11 digits.
         $this->validateContact($row, $familyNo, (string) ($data['contactnumber'] ?? ''));
-        // Suffix (optional): normalise "Jr."->"Jr" / map "the 3rd"->"III"; an unmappable
+        // Suffix (optional): normalise "Jr."->"JR" / map "the 3rd"->"III"; an unmappable
         // suffix is left blank (so the DB enum insert can't fail) with a warning.
         $suffix = $this->validateSuffix($row, $familyNo, (string) ($data['suffix'] ?? ''));
 
@@ -1059,76 +1249,113 @@ class FamilyExcelImporter
     }
 
     /**
-     * Validates a birthday cell (MM-DD-YYYY, legacy YYYY-MM-DD accepted). Required for
-     * heads. Returns the stored Y-m-d value or null.
+     * Records the warning for a blank field that imports as NULL: the row is saved,
+     * and the family is listed on the Data Completeness report until the data is
+     * collected. Blank never blocks, because the member table permits NULL on
+     * every field this covers; only identity (names, QR) and family structure do.
      */
-    private function validateBirthday(int $row, string $familyNo, string $value, bool $required): ?string
+    private function incompleteField(int $row, string $familyNo, string $field, string $label): void
+    {
+        $this->addError($row, $familyNo, 'INCOMPLETE', $field,
+            $label . ' is blank - imports with no ' . strtolower($label)
+            . '. The family is listed on the Data Completeness report.', 'warning');
+    }
+
+    /**
+     * Validates a birthday cell. Blank, unparseable, and future values all import
+     * as NULL with a warning, so the write step's not_future_date rule can never
+     * roll a family back; the original text is quoted so the spreadsheet fixer can
+     * see it. A date over 150 years past warns but still imports as typed (the DB
+     * accepts it, and 150 is past the oldest human on record).
+     */
+    private function validateBirthday(int $row, string $familyNo, string $value): ?string
     {
         $value = trim($value);
 
         if ($value === '') {
-            if ($required) {
-                $this->addError($row, $familyNo, 'BDAY', 'birthday', 'Birthday is required (format MM-DD-YYYY).');
-            }
+            $this->incompleteField($row, $familyNo, 'birthday', 'Birthday');
 
             return null;
         }
 
-        foreach (['m-d-Y', 'Y-m-d'] as $format) {
-            $date = \DateTimeImmutable::createFromFormat('!' . $format, $value);
+        $date = $this->parseSheetBirthday($value);
 
-            if ($date !== false && $date->format($format) === $value) {
-                $this->checkBirthdayRange($row, $familyNo, $date, $value);
+        if ($date === null) {
+            $this->addError($row, $familyNo, 'BDAY', 'birthday',
+                'Birthday "' . $value . '" could not be read (use MM-DD-YYYY) - imports with no birthday.'
+                . ' The family is listed on the Data Completeness report.', 'warning');
 
-                return $date->format('Y-m-d');
-            }
+            return null;
         }
 
-        $this->addError($row, $familyNo, 'BDAY', 'birthday', 'Birthday "' . $value . '" is not a valid date (use MM-DD-YYYY).');
-
-        return null;
-    }
-
-    /**
-     * Flags an implausible but validly-formatted birthday. Two cases, deliberately different
-     * severities so the review matches what the write step will actually accept:
-     *
-     *   future date  -> BLOCKING. MemberModel's `not_future_date` rule rejects the row on write,
-     *                   and one bad member rolls back its whole family (one family = one
-     *                   transaction). Passing it as a warning let entire families vanish on
-     *                   import with only a generic "could not save" - so block it in review and
-     *                   name the exact cell to fix.
-     *   over 150 yrs -> warning. The DB stores it fine (150 is past the ~122-year record, so it
-     *                   can't be a real person - only a typo), so flag but allow.
-     *
-     * Both bounds track today automatically.
-     */
-    private function checkBirthdayRange(int $row, string $familyNo, \DateTimeImmutable $date, string $raw): void
-    {
         $today = new \DateTimeImmutable('today');
 
         if ($date > $today) {
             $this->addError($row, $familyNo, 'BDAY-FUTURE', 'birthday',
-                'Birthday "' . $raw . '" is in the future - please check the year.');
+                'Birthday "' . $value . '" is in the future - imports with no birthday.'
+                . ' The family is listed on the Data Completeness report.', 'warning');
 
-            return;
+            return null;
         }
 
         if ($date < $today->modify('-150 years')) {
             $this->addError($row, $familyNo, 'BDAY-RANGE', 'birthday',
-                'Birthday "' . $raw . '" is over 150 years ago - please check the year.', 'warning');
+                'Birthday "' . $value . '" is over 150 years ago - please check the year.', 'warning');
         }
+
+        return $date->format('Y-m-d');
     }
 
-    /** Validates a sex cell against Male/Female. Required for heads. */
-    private function validateSex(int $row, string $familyNo, string $value, bool $required): ?string
+    /**
+     * Parses a sheet birthday tolerantly. Inner spaces are removed ("11- 30-2017"),
+     * doubled dashes collapse ("10-12--2019"), "=" becomes "-" ("03-02=2020"), and
+     * "/" separators become "-" in the template's M-D-Y order ("9/23/1989"). A
+     * single-digit month or day is zero-padded ("9/23/1989" -> "09-23-1989") so the
+     * M-D-Y round-trip accepts it. The value must still be a FULL real date:
+     * truncated ("03-07"), year-only ("2008"), and 5-digit years fail the round-trip
+     * and return null. Shared by validateBirthday() and normalizeBirthday() so the
+     * duplicate checks see the same dates the payload stores.
+     */
+    private function parseSheetBirthday(string $value): ?\DateTimeImmutable
+    {
+        $s = trim($value);
+        $s = preg_replace('/\s+/u', '', $s) ?? $s;
+        $s = str_replace(['=', '/'], '-', $s);
+
+        while (str_contains($s, '--')) {
+            $s = str_replace('--', '-', $s);
+        }
+
+        // Zero-pad a single-digit month/day in what is clearly the M-D-Y form, so
+        // the round-trip guard below sees "9-23-1989" as "09-23-1989".
+        $parts = explode('-', $s);
+
+        if (count($parts) === 3) {
+            [$a, $b, $c] = $parts;
+
+            if (preg_match('/^\d{1,2}$/', $a) && preg_match('/^\d{1,2}$/', $b) && preg_match('/^\d{4}$/', $c)) {
+                $s = str_pad($a, 2, '0', STR_PAD_LEFT) . '-' . str_pad($b, 2, '0', STR_PAD_LEFT) . '-' . $c;
+            }
+        }
+
+        foreach (['m-d-Y', 'Y-m-d'] as $format) {
+            $date = \DateTimeImmutable::createFromFormat('!' . $format, $s);
+
+            if ($date !== false && $date->format($format) === $s) {
+                return $date;
+            }
+        }
+
+        return null;
+    }
+
+    /** Validates a sex cell against Male/Female. Blank imports as NULL with an INCOMPLETE warning. */
+    private function validateSex(int $row, string $familyNo, string $value): ?string
     {
         $value = trim($value);
 
         if ($value === '') {
-            if ($required) {
-                $this->addError($row, $familyNo, 'SEX', 'sex', 'Sex is required (Male or Female).');
-            }
+            $this->incompleteField($row, $familyNo, 'sex', 'Sex');
 
             return null;
         }
@@ -1141,25 +1368,25 @@ class FamilyExcelImporter
             return 'FEMALE';
         }
 
-        $this->addError($row, $familyNo, 'SEX', 'sex', 'Sex "' . $value . '" must be Male or Female.');
+        $this->addError($row, $familyNo, 'SEX', 'sex',
+            'Sex "' . $value . '" is not Male or Female - imports with no sex.'
+            . ' The family is listed on the Data Completeness report.', 'warning');
 
         return null;
     }
 
     /**
      * Resolves a monthly-income cell (a bracket label or a number) to its stored value.
-     * Required for heads.
+     * Blank imports as NULL with an INCOMPLETE warning.
      *
      * @param array<string, string> $incomeByLabel
      */
-    private function resolveIncome(int $row, string $familyNo, string $value, bool $required, array $incomeByLabel): ?string
+    private function resolveIncome(int $row, string $familyNo, string $value, array $incomeByLabel): ?string
     {
         $value = trim($value);
 
         if ($value === '') {
-            if ($required) {
-                $this->addError($row, $familyNo, 'INCOME', 'monthlyincome', 'Monthly income is required.');
-            }
+            $this->incompleteField($row, $familyNo, 'monthlyincome', 'Monthly Income');
 
             return null;
         }
@@ -1170,20 +1397,27 @@ class FamilyExcelImporter
             return $incomeByLabel[$key];
         }
 
-        $numeric = str_replace(',', '', $value);
+        // Free-text amounts: strip a currency marker ("P3000", "PHP 15,000", "$1, 500"),
+        // then commas and stray spaces, and accept what is left as a plain amount.
+        $numeric = preg_replace('/^(?:php|p|₱|\$)\s*/ui', '', $value) ?? $value;
+        $numeric = str_replace([',', "\u{00A0}", ' '], '', $numeric);
 
-        if (is_numeric($numeric)) {
+        if ($numeric !== '' && is_numeric($numeric)) {
             return $numeric;
         }
 
-        $this->addError($row, $familyNo, 'INCOME', 'monthlyincome', 'Monthly income "' . $value . '" is not a valid bracket or number.');
+        $this->addError($row, $familyNo, 'INCOME', 'monthlyincome',
+            'Monthly income "' . $value . '" could not be read as a bracket or amount - imports with no income.'
+            . ' The family is listed on the Data Completeness report.', 'warning');
 
         return null;
     }
 
     /**
-     * Maps a row's comma-separated sector codes to IDs. An unrecognized code is filed
-     * under the "Other Sectors" catch-all rather than aborting (mirrors the form).
+     * Maps a row's comma-separated sector codes to IDs. Every canonical token must
+     * exist in the reference lookup: an unknown token blocks the import rather than
+     * being silently filed under Other. A list containing any bad token returns no
+     * IDs, so a blocked row never carries a partial sector assignment.
      *
      * @param array{row: int, data: array<string, string>} $entry
      * @param array<string, int> $sectorByCode
@@ -1192,27 +1426,26 @@ class FamilyExcelImporter
     private function mapSectors(array $entry, string $familyNo, array $sectorByCode): array
     {
         $ids     = [];
-        $otherId = $sectorByCode['OTHER'] ?? null;
+        $invalid = false;
 
         foreach ($this->splitList((string) ($entry['data']['sector'] ?? '')) as $token) {
-            $code = strtoupper($token);
-
-            if (isset($sectorByCode[$code])) {
-                $ids[] = $sectorByCode[$code];
+            if (isset($sectorByCode[$token])) {
+                $ids[] = $sectorByCode[$token];
                 continue;
             }
 
-            if ($otherId !== null) {
-                $ids[] = $otherId;
-            }
+            $this->addError((int) $entry['row'], $familyNo, 'SECTOR', 'sector',
+                'Sector code "' . $token . '" is not on the Reference sheet. Choose a listed sector code.');
+            $invalid = true;
         }
 
-        return array_values(array_unique($ids));
+        return $invalid ? [] : array_values(array_unique($ids));
     }
 
     /**
-     * Maps a row's comma-separated service codes to IDs, recording an error for any
-     * unknown code.
+     * Maps a row's comma-separated service codes to IDs. Every canonical token must
+     * resolve to a reference service. A list containing any bad token returns no IDs,
+     * so the blocking review state cannot carry a partial service assignment.
      *
      * @param array{row: int, data: array<string, string>} $entry
      * @param array<string, int> $serviceByCode
@@ -1220,20 +1453,46 @@ class FamilyExcelImporter
      */
     private function mapServices(array $entry, string $familyNo, array $serviceByCode): array
     {
-        $ids = [];
+        $ids     = [];
+        $invalid = false;
 
         foreach ($this->splitList((string) ($entry['data']['services'] ?? '')) as $token) {
-            $code = strtoupper($token);
+            $codes = $this->serviceTokens((int) $entry['row'], $familyNo, $token, $serviceByCode);
 
-            if (isset($serviceByCode[$code])) {
-                $ids[] = $serviceByCode[$code];
+            if ($codes === []) {
+                $invalid = true;
                 continue;
             }
 
-            $this->addError($entry['row'], $familyNo, 'SERVICE', 'services', 'Unknown service code "' . $token . '" (see the Reference sheet).');
+            foreach ($codes as $code) {
+                $ids[] = $serviceByCode[$code];
+            }
         }
 
-        return array_values(array_unique($ids));
+        return $invalid ? [] : array_values(array_unique($ids));
+    }
+
+    /**
+     * Resolves one already-canonical comma-delimited token to its service code.
+     * Whitespace is never a delimiter: canonicalization has removed it, so a value
+     * such as "EDA8 EDA9" is one invalid token ("EDA8EDA9") until corrected with
+     * a comma.
+     *
+     * @param array<string, int> $serviceByCode
+     * @return list<string>
+     */
+    private function serviceTokens(int $row, string $familyNo, string $token, array $serviceByCode): array
+    {
+        $code = self::SERVICE_ALIASES[$token] ?? $token;
+
+        if (isset($serviceByCode[$code])) {
+            return [$code];
+        }
+
+        $this->addError($row, $familyNo, 'SERVICE', 'services',
+            'Service code "' . $token . '" is not on the Reference sheet. Choose a listed service code.');
+
+        return [];
     }
 
     /**
@@ -1257,9 +1516,9 @@ class FamilyExcelImporter
     }
 
     /**
-     * Maps a name suffix to a valid dropdown value (Jr, Sr, I-V) so the DB enum is always
+     * Maps a name suffix to a valid dropdown value (JR, SR, I-V) so the DB enum is always
      * satisfied. Blank stays blank. A trivial cleanup (case / trailing dot) is applied
-     * silently; a real change ("Junior" -> "Jr", "the 3rd" -> "III") is coerced with a
+     * silently; a real change ("Junior" -> "JR", "the 3rd" -> "III") is coerced with a
      * warning. Anything that maps to nothing is left blank (also enum-safe) with a warning.
      */
     private function validateSuffix(int $row, string $familyNo, string $raw): ?string
@@ -1293,11 +1552,11 @@ class FamilyExcelImporter
     }
 
     /**
-     * Blocks a head whose barangay isn't one of the official Biñan barangays. The match is
+     * Flags a head whose barangay isn't one of the official Biñan barangays. The match is
      * tolerant (case, ñ, dots and the "(...)" alias are ignored) so "Biñan"/"Sto. Tomas"
-     * still pass; only a genuine non-barangay is flagged. Blocking since V22: the barangay
-     * is stored as member.barangayID, so a value that resolves to no row is not saved at
-     * all. Letting it through would import the head with no barangay.
+     * still pass; only a genuine non-barangay is flagged. Since V22 the barangay is stored
+     * as member.barangayID, so a value that resolves to no row is not saved at all - the
+     * head imports with no barangay and the family is queued on the Data Completeness report.
      */
     private function validateBarangay(int $row, string $familyNo, string $value): void
     {
@@ -1312,7 +1571,8 @@ class FamilyExcelImporter
 
         if (! isset($known[$this->normalizeBarangay($value)])) {
             $this->addError($row, $familyNo, 'BRGY', 'barangay',
-                'Barangay "' . $value . '" is not an official Biñan barangay - please check the spelling.');
+                'Barangay "' . $value . '" is not an official Biñan barangay - imports with no barangay.'
+                . ' The family is listed on the Data Completeness report.', 'warning');
         }
     }
 
@@ -1460,24 +1720,15 @@ class FamilyExcelImporter
         }
     }
 
-    /** Y-m-d for a sheet birthday, or null when blank/unparseable. Emits no errors. */
+    /**
+     * Y-m-d for a sheet birthday, or null when blank/unparseable. Emits no errors.
+     * Tolerant, shared with parseSheetBirthday(), so identity keys match the payload's dates.
+     */
     private function normalizeBirthday(string $value): ?string
     {
-        $value = trim($value);
+        $date = $this->parseSheetBirthday($value);
 
-        if ($value === '') {
-            return null;
-        }
-
-        foreach (['m-d-Y', 'Y-m-d'] as $format) {
-            $date = \DateTimeImmutable::createFromFormat('!' . $format, $value);
-
-            if ($date !== false && $date->format($format) === $value) {
-                return $date->format('Y-m-d');
-            }
-        }
-
-        return null;
+        return $date === null ? null : $date->format('Y-m-d');
     }
 
     /**
@@ -1505,72 +1756,62 @@ class FamilyExcelImporter
     }
 
     /**
-     * QR-31 refinement: warns when two rows look like the SAME person - identical first +
-     * middle + last + suffix + birthday AND the same household address (members inherit the
-     * head's). Never skipped or blocked, so a genuine coincidence still imports. Only runs
-     * per family with exactly one head (address is unambiguous there).
+     * Finds deterministic in-file duplicate rows. The full key deliberately includes the
+     * relationship and household fields: a matching name and birthday alone is not proof
+     * that two people are copies. Groups never cross a QR number.
      *
      * @param array<int|string, list<array{row: int, data: array<string,string>}>> $groups
+     * @return list<array{rows:list<int>,qr:string}>
      */
-    private function checkDuplicatePersons(array $groups): void
+    private function classifyDuplicateRows(array $groups): array
     {
-        $byKey = [];
+        $duplicateGroups = [];
 
         foreach ($groups as $qr => $rows) {
-            $head = null;
-            $headCount = 0;
+            $byKey = [];
 
             foreach ($rows as $entry) {
-                if (strcasecmp(trim((string) ($entry['data']['relationship'] ?? '')), 'Head') === 0) {
-                    $head = $entry;
-                    $headCount++;
-                }
-            }
-
-            if ($headCount !== 1) {
-                continue;
-            }
-
-            $addressKey = $this->normalizeText((string) ($head['data']['address'] ?? ''))
-                . '|' . $this->normalizeText((string) ($head['data']['barangay'] ?? ''));
-
-            foreach ($rows as $entry) {
-                $data  = $entry['data'];
+                $data = $entry['data'];
                 $first = $this->normalizeText((string) ($data['firstname'] ?? ''));
-                $last  = $this->normalizeText((string) ($data['lastname'] ?? ''));
+                $last = $this->normalizeText((string) ($data['lastname'] ?? ''));
+                $birthday = $this->normalizeBirthday((string) ($data['birthday'] ?? ''));
 
-                // Blank names are already flagged REQUIRED; don't treat them as dup matches.
-                if ($first === '' || $last === '') {
+                // An incomplete identity cannot prove that rows are copies.
+                if ($first === '' || $last === '' || $birthday === null) {
                     continue;
                 }
 
-                $key = implode('|', [
+                $key = json_encode([
+                    $this->normalizeText((string) ($data['relationship'] ?? '')),
                     $first,
                     $this->normalizeText((string) ($data['middlename'] ?? '')),
                     $last,
                     $this->normalizeText(str_replace('.', '', (string) ($data['suffix'] ?? ''))),
-                    trim((string) ($data['birthday'] ?? '')),
-                    $addressKey,
-                ]);
+                    $birthday,
+                    $this->normalizeText((string) ($data['address'] ?? '')),
+                    $this->normalizeText((string) ($data['barangay'] ?? '')),
+                ], JSON_THROW_ON_ERROR);
 
-                $byKey[$key][] = ['row' => (int) $entry['row'], 'qr' => (string) $qr];
+                $byKey[$key][] = (int) $entry['row'];
+            }
+
+            foreach ($byKey as $candidateRows) {
+                if (count($candidateRows) < 2) {
+                    continue;
+                }
+
+                $duplicateGroups[] = ['rows' => $candidateRows, 'qr' => (string) $qr];
+
+                foreach ($candidateRows as $row) {
+                    $others = array_values(array_filter($candidateRows, static fn (int $other): bool => $other !== $row));
+                    $this->addError($row, (string) $qr, 'DUP-ROW', null,
+                        'This is an exact duplicate of row(s) ' . implode(', ', $others)
+                        . '. Keep one complete row and discard the copies from this import.');
+                }
             }
         }
 
-        foreach ($byKey as $hits) {
-            if (count($hits) < 2) {
-                continue;
-            }
-
-            $allRows = array_map(static fn (array $h): int => $h['row'], $hits);
-
-            foreach ($hits as $hit) {
-                $others = array_values(array_filter($allRows, static fn (int $r): bool => $r !== $hit['row']));
-
-                $this->addError($hit['row'], $hit['qr'], 'DUP-PERSON', null,
-                    'Same person (name, birthday, and address) also on row(s) ' . implode(', ', $others) . '. Check this is not a duplicate.', 'warning');
-            }
-        }
+        return $duplicateGroups;
     }
 
     // -- lookups + helpers -----------------------------------------------------
@@ -1737,8 +1978,8 @@ class FamilyExcelImporter
 
     /**
      * Resolves a head's Barangay cell to its barangayID, or null when blank or
-     * unrecognised. Both cases are already blocked by requireField()/validateBarangay(),
-     * so the null here only ever reaches a row the review step refuses to commit.
+     * unrecognised. A blank cell carries an INCOMPLETE warning and an unrecognised one
+     * a BRGY error, so the null matches the row's review verdict.
      */
     private function barangayIdForHead(string $value): ?int
     {
@@ -1749,6 +1990,23 @@ class FamilyExcelImporter
         }
 
         return $this->barangayIdMap()[$this->normalizeBarangay($value)] ?? null;
+    }
+
+    /**
+     * Canonicalizes a comma-separated code list without inferring separate codes
+     * from whitespace. Strict-code validation handles every resulting token.
+     */
+    private function canonicalCodeList(string $value): string
+    {
+        $codes = array_map(
+            static fn (string $code): string => mb_strtoupper(
+                (string) preg_replace('/\s+/u', '', trim($code)),
+                'UTF-8'
+            ),
+            explode(',', $value)
+        );
+
+        return implode(',', array_values(array_filter($codes, static fn (string $code): bool => $code !== '')));
     }
 
     /** @return list<string> Non-empty, trimmed tokens from a comma-separated cell. */

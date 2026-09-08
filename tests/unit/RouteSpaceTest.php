@@ -28,15 +28,16 @@ final class RouteSpaceTest extends CIUnitTestCase
     public function testEveryPageResolvesAtItsFlatUri(): void
     {
         $expected = [
-            'dashboard'        => 'DashboardController::dashboard',
-            'records'          => 'DashboardController::manageRecords',
-            'records/entry'    => 'FamilyController::createFamily',
-            'records/import'   => 'FamilyImportController::importForm',
-            'reference-data'   => 'DashboardController::referenceData',
-            'cards'            => 'DashboardController::cards',
-            'distribution'     => 'DistributionController::distribution',
-            'accounts'         => 'DashboardController::accounts',
-            'audit-trails'     => 'DashboardController::auditTrails',
+            'dashboard'          => 'DashboardController::dashboard',
+            'records'            => 'DashboardController::manageRecords',
+            'records/entry'      => 'FamilyController::createFamily',
+            'records/import'     => 'FamilyImportController::importForm',
+            'records/completeness' => 'DashboardController::dataCompleteness',
+            'reference-data'     => 'DashboardController::referenceData',
+            'cards'              => 'DashboardController::cards',
+            'distribution'       => 'DistributionController::distribution',
+            'accounts'           => 'DashboardController::accounts',
+            'audit-trails'       => 'DashboardController::auditTrails',
         ];
 
         foreach ($expected as $uri => $handler) {
@@ -78,6 +79,12 @@ final class RouteSpaceTest extends CIUnitTestCase
                 $uri . ' must declare its manifest key'
             );
         }
+
+        $this->assertSame(
+            ['roleNav:records-completeness'],
+            $routes->getFiltersForRoute('records/completeness', 'GET'),
+            'records/completeness must declare its manifest key'
+        );
     }
 
     public function testSubsidyTypeActionsLiveUnderReferenceData(): void

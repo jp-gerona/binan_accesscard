@@ -76,6 +76,48 @@ class ImportReviewChangeLog
     }
 
     /**
+     * Records the duplicate copies omitted while keeping one candidate active.
+     *
+     * @param list<array{sheetRow:int,data:array<string,string>}> $rows
+     * @return array{at:string,action:string,qr:string,head:string,lines:list<string>}
+     */
+    public static function discarded(array $rows, int $keptRow): array
+    {
+        $lines = ['Kept duplicate candidate row ' . $keptRow . '.'];
+
+        foreach ($rows as $row) {
+            $sheetRow = (int) ($row['sheetRow'] ?? 0);
+
+            if ($sheetRow !== $keptRow) {
+                $lines[] = 'Discarded duplicate row ' . $sheetRow . ' ('
+                    . self::personName(is_array($row['data'] ?? null) ? $row['data'] : []) . ').';
+            }
+        }
+
+        return self::entry('Discarded', $rows, $lines);
+    }
+
+    /**
+     * Records a duplicate candidate returning to the active validation set.
+     *
+     * @param list<array{sheetRow:int,data:array<string,string>}> $rows
+     * @return array{at:string,action:string,qr:string,head:string,lines:list<string>}
+     */
+    public static function restored(array $rows, int $sheetRow): array
+    {
+        $row = [];
+
+        foreach ($rows as $candidate) {
+            if ((int) ($candidate['sheetRow'] ?? 0) === $sheetRow) {
+                $row = is_array($candidate['data'] ?? null) ? $candidate['data'] : [];
+                break;
+            }
+        }
+
+        return self::entry('Restored', $rows, ['Restored duplicate row ' . $sheetRow . ' (' . self::personName($row) . ').']);
+    }
+
+    /**
      * @param list<array{sheetRow:int,data:array<string,string>}> $rows
      * @param list<string>                                        $lines
      * @return array{at:string,action:string,qr:string,head:string,lines:list<string>}

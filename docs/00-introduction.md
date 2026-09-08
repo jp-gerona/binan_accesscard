@@ -132,6 +132,6 @@ Table: `subsidy_distribution`.
 **Audit trail.** The record of a change to a family record. Table:
 `audit_trails`.
 
-**The dump.** `accesscardV22.sql`, the SQL file that is the authoritative
+**The dump.** `accesscardV23.sql`, the SQL file that is the authoritative
 definition of the database schema. When this handbook says "the dump", it means
 that file.

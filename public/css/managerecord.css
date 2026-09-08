@@ -634,8 +634,25 @@ div.dt-container div.dt-search .input-group {
     gap: 0.25rem;
 }
 
-.import-review-status-col,
-.import-review-open-col {
+#importReviewTable .import-review-compact-col,
+#importReviewTable .import-review-status-col,
+#importReviewTable .import-review-open-col {
     width: 1%;
     white-space: nowrap;
+}
+
+/* Duplicate review decisions remain local to the import table: muted discarded rows
+   stay readable, and the resolver cards keep each candidate's action beside it.
+   --bs-secondary-color only exists in Bootstrap 5.3+, so use Bootstrap 5.2.3's
+   muted gray (--bs-gray-600, the value .text-muted renders) directly. */
+#importReview .import-review-discarded > td {
+    color: var(--bs-gray-600);
+}
+
+#importReview .js-import-duplicate-panel .border {
+    background-color: var(--bs-body-bg);
+}
+
+#importReview .js-import-duplicate-panel .btn {
+    width: 100%;
 }

@@ -1,6 +1,6 @@
 # Database
 
-Seventeen tables in MySQL. The schema is defined by `accesscardV22.sql`, checked
+Seventeen tables in MySQL. The schema is defined by `accesscardV23.sql`, checked
 into the repository root, and that file is the authority. There are no
 CodeIgniter migrations and there never will be; the reasoning is at the bottom of
 this chapter.
@@ -259,6 +259,7 @@ through:
 | `v22-barangay-fk.sql` | added the barangay foreign key |
 | `v22-normalize.sql` | added `member_sectors`, grouped services by key |
 | `v22-normalize-drop.sql` | dropped the old columns, run last |
+| `v23-add-iw-sector.sql` | added the `IW` (Informal Worker) sector row |
 
 Order within a version matters. Backfills run before the constraints that depend
 on them, and `v22-normalize-drop.sql` runs only after the commands that read the
@@ -333,7 +334,7 @@ Pattern notes:
 ### Rule 4: Schema truth is the SQL dump - non-negotiable
 
 - **No migrations, ever.** Schema source of truth is the current dump,
-  `accesscardV22.sql`. Never alter schema in code.
+  `accesscardV23.sql`. Never alter schema in code.
 - Column names, allowed enum values, and role names match the dump exactly.
   Enum values are case-sensitive in practice: `sex` is `in_list[MALE,FEMALE]`
   (`app/Models/Families/MemberModel.php:29`), not `[Male,Female]`.

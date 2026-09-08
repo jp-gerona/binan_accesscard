@@ -58,9 +58,10 @@ $rows = [
     // QR-TAKEN: QR 3 is Rafael Ramos's — right name, WRONG birthday (1960 vs 1959).
     ['3', 'Head', 'Ramos', 'Rafael', 'Malabanan', '', '04-28-1960', 'Male', 'W', '09129375782', 'Roman Catholic', 'HS', 'Retired', '8000', '59 Magsaysay St.', 'Malamig', '', ''],
 
-    // -- WARNING: ADD-MEMBER ----------------------------------------------------
+    // -- WARNING: ADD-MEMBER + INCOMPLETE ---------------------------------------
     // No Head row, and QR 5 already belongs to Michelle Buenaventura: the forgotten-member
-    // case. This person is ADDED to family 5 on import.
+    // case. This person is ADDED to family 5 on import. Because the child's civil status,
+    // education, job and income are blank, the row also raises INCOMPLETE warnings.
     ['5', 'Child', 'Buenaventura', 'Nico', 'Panganiban', '', '07-11-2008', 'Male', '', '', '', '', '', '', '', '', '', ''],
 
     // -- WARNING: DUP-DB (the silent skip) --------------------------------------
@@ -85,10 +86,15 @@ $rows = [
     ['9000004', 'Head', 'Aquino', 'Pedro', 'Roque', '', '04-04-1965', 'Male', 'M', '09181234567', 'Roman Catholic', 'E', 'Farmer', '7000', '1 Acacia St.', 'Timbao', '', ''],
     ['9000004', 'Spouse', 'Bautista', 'Elena', 'Diaz', '', '09-09-1969', 'Female', 'W', '09182223333', 'Roman Catholic', 'E', 'Vendor', '7000', '99 Ipil St.', 'De La Paz', '', ''],
 
-    // -- BLOCKING: field-level errors --------------------------------------------
-    // Five separate field errors on ONE row: REQUIRED (blank Job on a Head), BDAY (an
+    // -- BLOCKING + WARNING: field-level errors ----------------------------------
+    // Five separate field warnings on ONE row: INCOMPLETE (blank Job on a Head), BDAY (an
     // impossible date), SEX ("Malee"), INCOME ("plenty"), SERVICE (code not on the sheet).
+    // Under the relaxed contract blank member fields warn and import NULL; only first and
+    // last names are blocking REQUIRED.
     ['9000005', 'Head', 'Villanueva', 'Andres', 'Lopez', '', '31-31-2000', 'Malee', 'M', '09171234000', 'Roman Catholic', 'HS', '', 'plenty', '77 Sampaguita St.', 'Zapote', '', 'ZZZ'],
+
+    // REQUIRED: a blank last name is the only remaining field-level blocker.
+    ['9000012', 'Head', '', 'NoLastname', '', '', '01-01-1990', 'Male', 'S', '', 'Roman Catholic', 'HS', 'Driver', '12000', '100 Test St.', 'Poblacion', '', ''],
 
     // LENGTH: a first name past the 100-character column limit.
     ['9000006', 'Head', 'Mercado', 'Juanitolongfirstnamethatgoesonandonandonandonandonandonandonandonandonandonandonandonandonandonandonandon', '', '', '02-02-1980', 'Male', 'S', '09171235555', 'Roman Catholic', 'HS', 'Janitor', '12000', '3 Ilang-Ilang St.', 'Sto. Domingo', '', ''],

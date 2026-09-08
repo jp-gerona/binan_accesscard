@@ -67,7 +67,7 @@ final class ImportReviewRowsTest extends CIUnitTestCase
     }
 
     /**
-     * Stages a two-person import: a clean head and a member with a blocking SEX error.
+     * Stages an exact duplicate pair, a clean head, and a member with a blocking SEX error.
      * Returns the job ID.
      */
     private function stageJob(int $userId): int
@@ -92,25 +92,45 @@ final class ImportReviewRowsTest extends CIUnitTestCase
             'changes'    => [],
             'rows'       => [
                 ['sheetRow' => 3, 'data' => [
+                    'familyno' => '6001', 'relationship' => 'Child', 'lastname' => 'Cruz',
+                    'firstname' => 'Ana', 'birthday' => '02-02-2010', 'sex' => 'Female',
+                    'address' => '1 Street', 'barangay' => 'Canlalay',
+                    'civilstatus' => 'Single', 'education' => 'Elementary', 'job' => 'Student',
+                    'monthlyincome' => '0',
+                ]],
+                ['sheetRow' => 4, 'data' => [
+                    'familyno' => '6001', 'relationship' => 'Child', 'lastname' => 'Cruz',
+                    'firstname' => 'Ana', 'birthday' => '02-02-2010', 'sex' => 'Female',
+                    'address' => '1 Street', 'barangay' => 'Canlalay',
+                    'civilstatus' => 'Single', 'education' => 'Elementary', 'job' => 'Student',
+                    'monthlyincome' => '0',
+                ]],
+                ['sheetRow' => 5, 'data' => [
                     'familyno' => '6001', 'relationship' => 'Head', 'lastname' => 'Cruz',
                     'firstname' => 'Juan', 'birthday' => '03-03-1980', 'sex' => 'Male',
                     'address' => '1 Street', 'barangay' => 'Canlalay',
                     'civilstatus' => 'Single', 'education' => 'College', 'job' => 'Driver',
                     'monthlyincome' => '5000',
                 ]],
-                ['sheetRow' => 4, 'data' => [
+                ['sheetRow' => 6, 'data' => [
                     'familyno' => '6001', 'relationship' => 'Child', 'lastname' => 'Cruz',
-                    'firstname' => 'Ana', 'birthday' => '02-02-2010', 'sex' => 'Mail',
+                    'firstname' => 'Lia', 'birthday' => '02-02-2012', 'sex' => 'Mail',
                     'address' => '1 Street', 'barangay' => 'Canlalay',
-                    'civilstatus' => 'Single', 'education' => 'Elementary', 'job' => 'None',
+                    'civilstatus' => 'Single', 'education' => 'Elementary', 'job' => 'Student',
                     'monthlyincome' => '0',
                 ]],
             ],
-            'errors' => [[
-                'sheetRow' => 4, 'familyNo' => '6001', 'code' => 'SEX', 'field' => 'sex',
-                'message' => 'Sex must be Male or Female.', 'severity' => 'blocking',
-            ]],
-            'counts' => ['rows' => 2, 'blocking' => 1, 'warnings' => 0],
+            'discarded' => [],
+            'duplicateGroups' => [['rows' => [3, 4], 'qr' => '6001']],
+            'errors' => [
+                ['sheetRow' => 3, 'familyNo' => '6001', 'code' => 'DUP-ROW', 'field' => null,
+                    'message' => 'This is an exact duplicate of row 4.', 'severity' => 'blocking'],
+                ['sheetRow' => 4, 'familyNo' => '6001', 'code' => 'DUP-ROW', 'field' => null,
+                    'message' => 'This is an exact duplicate of row 3.', 'severity' => 'blocking'],
+                ['sheetRow' => 6, 'familyNo' => '6001', 'code' => 'SEX', 'field' => 'sex',
+                    'message' => 'Sex must be Male or Female.', 'severity' => 'blocking'],
+            ],
+            'counts' => ['rows' => 4, 'blocking' => 3, 'warnings' => 0],
         ]);
 
         $this->stagedJobIds[] = $jobId;
@@ -140,6 +160,50 @@ final class ImportReviewRowsTest extends CIUnitTestCase
         return ['is_logged_in' => true, 'role' => $role, 'user_id' => $userId];
     }
 
+    /**
+     * Replaces the staging service with a store that fails one persistence operation.
+     * The errors failure occurs after rows have been written, exercising review rollback.
+     */
+    private function failReviewPersistence(string $failure): void
+    {
+        $store = new class($this->stagingDir, $failure) extends ImportStagingStore {
+            public function __construct(string $dir, private string $failure)
+            {
+                parent::__construct($dir);
+            }
+
+            public function saveRows(int $jobId, array $rows): bool
+            {
+                if ($this->failure === 'throw') {
+                    throw new \RuntimeException('Rows staging failed.');
+                }
+
+                if ($this->failure === 'rows') {
+                    return false;
+                }
+
+                return parent::saveRows($jobId, $rows);
+            }
+
+            public function saveErrors(
+                int $jobId,
+                array $errors,
+                array $counts,
+                array $discarded,
+                array $duplicateGroups,
+                array $changes,
+            ): bool {
+                if ($this->failure === 'errors') {
+                    return false;
+                }
+
+                return parent::saveErrors($jobId, $errors, $counts, $discarded, $duplicateGroups, $changes);
+            }
+        };
+
+        \CodeIgniter\Config\Services::injectMock('importStaging', $store);
+    }
+
     public function testItReturnsTheFirstPageOfRows(): void
     {
         $userId = $this->encoder();
@@ -151,9 +215,9 @@ final class ImportReviewRowsTest extends CIUnitTestCase
         $result->assertStatus(200);
         $json = json_decode((string) $result->response()->getBody(), true);
 
-        $this->assertCount(2, $json['rows']);
-        $this->assertSame(2, $json['total']);
-        $this->assertSame(2, $json['filtered']);
+        $this->assertCount(4, $json['rows']);
+        $this->assertSame(4, $json['total']);
+        $this->assertSame(4, $json['filtered']);
         $this->assertSame(1, $json['page']);
         $this->assertSame(25, $json['per']);
     }
@@ -168,9 +232,9 @@ final class ImportReviewRowsTest extends CIUnitTestCase
 
         $json = json_decode((string) $result->response()->getBody(), true);
 
-        $this->assertSame(1, $json['filtered']);
-        $this->assertSame(4, $json['rows'][0]['sheetRow']);
-        $this->assertSame('sex', $json['rows'][0]['fields'][0]['field']);
+        $this->assertSame(3, $json['filtered']);
+        $this->assertSame(3, $json['rows'][0]['sheetRow']);
+        $this->assertSame('blocking', $json['rows'][0]['severity']);
     }
 
     public function testItReturns404WhenTheStagingFileIsGone(): void
@@ -216,7 +280,7 @@ final class ImportReviewRowsTest extends CIUnitTestCase
 
         $result = $this->withSession($this->session($userId))
             ->post('records/import/review/' . $jobId . '/apply', [
-                'import_row' => 4,
+                'import_row' => 6,
                 'fields'     => ['sex' => 'Female'],
             ]);
 
@@ -225,10 +289,139 @@ final class ImportReviewRowsTest extends CIUnitTestCase
 
         $this->assertSame('', $json['row']['severity']);
         $this->assertSame([], $json['row']['fields']);
-        $this->assertSame(0, $json['counts']['blocking']);
+        $this->assertSame(2, $json['counts']['blocking']);
 
         $staged = service('importStaging')->load($jobId);
-        $this->assertSame('Female', $staged['rows'][1]['data']['sex']);
+        $this->assertSame('FEMALE', $staged['rows'][3]['data']['sex']);
+    }
+
+    public function testApplyNormalizesPostedValuesBeforeStaging(): void
+    {
+        $userId = $this->encoder();
+        $jobId  = $this->stageJob($userId);
+
+        $result = $this->withSession($this->session($userId))
+            ->post('records/import/review/' . $jobId . '/apply', [
+                'import_row' => 6,
+                'fields'     => ['firstname' => 'ana  maria'],
+            ]);
+
+        $result->assertStatus(200);
+        $this->assertSame('ANA MARIA', service('importStaging')->load($jobId)['rows'][3]['data']['firstname']);
+    }
+
+    public function testApplyPersistenceExceptionDoesNotWriteAnAuditRow(): void
+    {
+        $userId = $this->encoder();
+        $jobId  = $this->stageJob($userId);
+        $this->failReviewPersistence('throw');
+
+        $result = $this->withSession($this->session($userId))
+            ->post('records/import/review/' . $jobId . '/apply', [
+                'import_row' => 6,
+                'fields'     => ['sex' => 'Female'],
+            ]);
+
+        $result->assertStatus(500);
+        $this->assertSame(0, db_connect()->table('audit_trails')->where('user_action', 'SYSTEM_ERROR')->countAllResults());
+    }
+
+    /** @dataProvider failedReviewPersistence */
+    public function testApplyReportsAndPreservesTheStageOnPersistenceFailure(string $failure): void
+    {
+        $userId = $this->encoder();
+        $jobId  = $this->stageJob($userId);
+        $before = service('importStaging')->load($jobId);
+        $this->failReviewPersistence($failure);
+
+        $result = $this->withSession($this->session($userId))
+            ->post('records/import/review/' . $jobId . '/apply', [
+                'import_row' => 6,
+                'fields'     => ['sex' => 'Female'],
+            ]);
+
+        $result->assertStatus(500);
+        $this->assertSame($before, service('importStaging')->load($jobId));
+    }
+
+    /** @return array<string, array{string}> */
+    public static function failedReviewPersistence(): array
+    {
+        return [
+            'rows write fails'   => ['rows'],
+            'errors write fails' => ['errors'],
+        ];
+    }
+
+    public function testResolveDuplicateDiscardsTheOtherCandidateAndLogsIt(): void
+    {
+        $userId = $this->encoder();
+        $jobId  = $this->stageJob($userId);
+
+        $result = $this->withSession($this->session($userId))
+            ->post('records/import/review/' . $jobId . '/resolve-duplicate', ['keep_row' => 3]);
+
+        $result->assertStatus(200);
+        $staged = service('importStaging')->load($jobId);
+
+        $this->assertSame(['keptRow' => 3, 'reason' => 'duplicate'], $staged['discarded'][4]);
+        $this->assertSame(0, $staged['counts']['blocking']);
+        $this->assertSame([], array_values(array_filter($staged['errors'], static fn (array $error): bool => (int) $error['sheetRow'] === 4)));
+        $this->assertSame('Discarded', $staged['changes'][0]['action']);
+    }
+
+    public function testRestoreMakesTheDiscardedDuplicateAnActiveBlockerAndLogsIt(): void
+    {
+        $userId = $this->encoder();
+        $jobId  = $this->stageJob($userId);
+
+        $this->withSession($this->session($userId))
+            ->post('records/import/review/' . $jobId . '/resolve-duplicate', ['keep_row' => 3])
+            ->assertStatus(200);
+
+        $result = $this->withSession($this->session($userId))
+            ->post('records/import/review/' . $jobId . '/restore', ['import_row' => 4]);
+
+        $result->assertStatus(200);
+        $staged = service('importStaging')->load($jobId);
+
+        $this->assertArrayNotHasKey(4, $staged['discarded']);
+        $this->assertSame(2, $staged['counts']['blocking']);
+        $this->assertNotSame([], array_values(array_filter($staged['errors'], static fn (array $error): bool => (int) $error['sheetRow'] === 4 && $error['code'] === 'DUP-ROW')));
+        $this->assertSame('Restored', $staged['changes'][1]['action']);
+    }
+
+    public function testDuplicateEndpointsRefuseAnotherUsersJobWithoutMutatingIt(): void
+    {
+        $owner  = $this->encoder();
+        $other  = $this->encoder();
+        $jobId  = $this->stageJob($owner);
+        $before = service('importStaging')->load($jobId);
+
+        foreach ([
+            ['resolve-duplicate', ['keep_row' => 3]],
+            ['restore', ['import_row' => 4]],
+        ] as [$endpoint, $post]) {
+            $result = $this->withSession($this->session($other))
+                ->post('records/import/review/' . $jobId . '/' . $endpoint, $post);
+
+            $result->assertStatus(404);
+        }
+
+        $this->assertSame($before, service('importStaging')->load($jobId));
+    }
+
+    public function testResolveDuplicateRejectsANonCandidateWithoutMutatingIt(): void
+    {
+        $userId = $this->encoder();
+        $jobId  = $this->stageJob($userId);
+        $before = service('importStaging')->load($jobId);
+
+        $result = $this->withSession($this->session($userId))
+            ->post('records/import/review/' . $jobId . '/resolve-duplicate', ['keep_row' => 6]);
+
+        $result->assertStatus(422);
+        $this->assertSame($before, service('importStaging')->load($jobId));
     }
 
     public function testApplyRejectsAFieldThatIsNotAnImporterField(): void
@@ -240,7 +433,7 @@ final class ImportReviewRowsTest extends CIUnitTestCase
 
         $result = $this->withSession($this->session($userId))
             ->post('records/import/review/' . $jobId . '/apply', [
-                'import_row' => 4,
+                'import_row' => 6,
                 'fields'     => ['password' => 'x'],
             ]);
 
@@ -273,7 +466,7 @@ final class ImportReviewRowsTest extends CIUnitTestCase
 
         $result = $this->withSession($this->session($userId))
             ->post('records/import/review/' . $jobId . '/apply', [
-                'import_row' => 4,
+                'import_row' => 6,
                 'fields'     => ['relationship' => 'Head'],
             ]);
 
@@ -289,7 +482,7 @@ final class ImportReviewRowsTest extends CIUnitTestCase
 
         $result = $this->withSession($this->session($userId))
             ->post('records/import/review/' . $jobId . '/apply', [
-                'import_row' => 4,
+                'import_row' => 6,
                 'fields'     => ['sex' => 'Female'],
             ]);
 
@@ -307,7 +500,7 @@ final class ImportReviewRowsTest extends CIUnitTestCase
 
         $result = $this->withSession($this->session($userId))
             ->post('records/import/review/' . $jobId . '/apply', [
-                'import_row' => 4,
+                'import_row' => 6,
                 'fields'     => ['sex' => 'Female'],
             ]);
 
@@ -366,7 +559,7 @@ final class ImportReviewRowsTest extends CIUnitTestCase
 
         $result = $this->withSession($this->session($other))
             ->post('records/import/review/' . $jobId . '/apply', [
-                'import_row' => 4,
+                'import_row' => 6,
                 'fields'     => ['sex' => 'Female'],
             ]);
 
@@ -374,7 +567,7 @@ final class ImportReviewRowsTest extends CIUnitTestCase
 
         // The other user's request must not have touched the owner's staged rows.
         $staged = service('importStaging')->load($jobId);
-        $this->assertSame('Mail', $staged['rows'][1]['data']['sex']);
+        $this->assertSame('Mail', $staged['rows'][3]['data']['sex']);
     }
 
     public function testCommitRefusesAJobStagedByAnotherUser(): void
@@ -422,17 +615,17 @@ final class ImportReviewRowsTest extends CIUnitTestCase
 
         $this->withSession($this->session($userId))
             ->post('records/import/review/' . $jobId . '/apply', [
-                'import_row' => 4, 'fields' => ['sex' => 'Female'],
+                'import_row' => 6, 'fields' => ['sex' => 'Female'],
             ]);
 
         $result = $this->withSession($this->session($userId))
             ->post('records/import/review/' . $jobId . '/apply', [
-                'import_row' => 4, 'fields' => ['birthday' => '02-02-2011'],
+                'import_row' => 6, 'fields' => ['birthday' => '02-02-2011'],
             ]);
 
         $result->assertStatus(200);
         $json = json_decode((string) $result->response()->getBody(), true);
 
-        $this->assertSame(0, $json['counts']['blocking']);
+        $this->assertSame(2, $json['counts']['blocking']);
     }
 }

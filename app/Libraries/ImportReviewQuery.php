@@ -16,8 +16,8 @@ final class ImportReviewQuery
     /** Page sizes the table offers. Anything else falls back to the first. */
     public const PER_PAGE = [25, 50, 100];
 
-    /** Row filters. 'problems' is any flag at all; the other two are exact. */
-    public const SEVERITIES = ['all', 'problems', 'blocking', 'warning'];
+    /** Row filters. 'problems' is any active flag; the other values are exact. */
+    public const SEVERITIES = ['all', 'problems', 'blocking', 'warning', 'discarded'];
 
     private function __construct(
         public readonly int $page,

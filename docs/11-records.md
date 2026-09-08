@@ -93,6 +93,21 @@ can be restored with its history intact, and its audit trail keeps resolving.
 and `store` for creation, `profile` and `edit` for viewing and editing, `update`,
 `archive`, and `restore`.
 
+## The Data Completeness queue
+
+Records are not always complete on the first pass. An Excel import (chapter 12)
+saves rows even when optional-but-important fields are blank: the family lands on
+the Data Completeness queue instead of being rejected. The queue lives at
+`records/completeness` and lists every family with at least one blank field the
+city still needs to collect.
+
+The queue is part of the records workflow, not a separate module. Staff open a
+family from the queue, fill the missing fields through the same family form used
+for edits, and the family drops off the queue once the last blank is gone. The
+download link at `records/completeness/download` produces an `.xlsx` checklist
+for barangay follow-up. Chapter 12 covers which import warnings send a family
+here and how the importer reports them.
+
 ## Every mutation writes an audit row
 
 Creating, updating, archiving, and restoring a family each write to

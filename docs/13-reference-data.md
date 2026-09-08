@@ -19,10 +19,13 @@ parenthesised alias, because survey spreadsheets spell them every possible way.
 Anything still off-list raises the `BRGY` warning rather than blocking, so a
 family is never lost to a spelling argument.
 
-**`sector`** is the classification list: senior citizen, person with disability,
-solo parent, and so on. A member can belong to several, through the
-`member_sectors` junction. Sectors do double duty: they describe a member, and
-they target a distribution batch.
+**`sector`** is the classification list: senior citizen (`SC`), person with
+disability (`PWD`), solo parent (`SP`), breastfeeding (`B`), LGBT, overseas
+Filipino worker (`OFW`), indigenous people (`IP`), internally displaced person
+(`IDP`), person deprived of liberty (`PDL`), Informal Worker (`IW`), and Other
+Sectors (`OTHER`). A member can belong to several, through the `member_sectors`
+junction. Sectors do double duty: they describe a member, and they target a
+distribution batch.
 
 **`category`** groups services.
 

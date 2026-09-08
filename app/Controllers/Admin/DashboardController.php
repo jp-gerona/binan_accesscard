@@ -65,6 +65,21 @@ class DashboardController extends BaseController
     }
 
     /**
+     * GET `records/completeness`. The Data Completeness work queue: families
+     * whose records imported (or were entered) with blank profile fields.
+     */
+    public function dataCompleteness(): string
+    {
+        return (new DashboardPageBuilder($this->request))->renderPage('records-completeness');
+    }
+
+    /** GET `records/completeness/download`. The queue as a filter-honouring .xlsx file. */
+    public function completenessDownload(): \CodeIgniter\HTTP\ResponseInterface
+    {
+        return (new DashboardPageBuilder($this->request))->completenessDownloadResponse();
+    }
+
+    /**
      * GET `audit-trails`. Renders the audit log page, or the audit fragment
      * for AJAX search/filtering.
      */

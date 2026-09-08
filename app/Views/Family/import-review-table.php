@@ -38,15 +38,17 @@ $summary = $summary ?? [];
 </div>
 <div class="table-responsive">
     <table class="table table-hover align-middle mb-0" id="importReviewTable">
-        <thead>
+        <thead class="text-nowrap">
             <tr>
-                <th scope="col"><span class="visually-hidden">Status</span></th>
-                <th scope="col">Family</th>
-                <th scope="col">Role</th>
-                <th scope="col">Last Name</th>
-                <th scope="col">First Name</th>
-                <th scope="col">Issues</th>
-                <th scope="col"><span class="visually-hidden">Open</span></th>
+                <th scope="col" class="import-review-status-col"><span class="visually-hidden">Status</span></th>
+                <th scope="col" class="import-review-compact-col">Row</th>
+                <th scope="col" class="import-review-compact-col">ID</th>
+                <th scope="col" class="import-review-compact-col">Role</th>
+                <th scope="col" class="import-review-compact-col">Last Name</th>
+                <th scope="col" class="import-review-compact-col">First Name</th>
+                <th scope="col" class="import-review-compact-col">Middle Name</th>
+                <th scope="col" class="w-100">Issues</th>
+                <th scope="col" class="import-review-open-col"><span class="visually-hidden">Open</span></th>
             </tr>
         </thead>
         <tbody></tbody>

@@ -41,6 +41,10 @@ from it. Adding a page is one entry here, not an edit in three layouts.
 Order in the file is display order, and `heading` groups consecutive entries into
 the sidebar's sections: Core, Profiling, Distribution, Administration.
 
+The Profiling heading, for example, lists `records`, `records-import`, and
+`records-completeness` in that order. The last one is the Data Completeness queue
+(chapter 11), reachable by Developer, Admin, and Encoder.
+
 Two role sets cover most pages. `ALL_STAFF` is Developer, Admin, Encoder and
 Viewer. `MANAGERS` is Developer and Admin. Pages that do not fit either list
 their roles directly, such as Access Cards for Developer, Admin and Encoder.
@@ -119,7 +123,8 @@ covered in chapter 15.
 Flat, one URI per page:
 
 `dashboard`, `records`, `reference-data`, `cards`, `distribution`, `accounts`,
-`audit-trails`, plus `records/entry`, `records/import`, and `records/{id}`.
+`audit-trails`, plus `records/entry`, `records/import`, `records/completeness`,
+`records/completeness/download`, and `records/{id}`.
 
 The scanner kiosk keeps its own space under `scanner/` and its own shell, because
 it is not a dashboard page and does not want the sidebar.

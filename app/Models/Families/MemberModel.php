@@ -557,6 +557,35 @@ class MemberModel extends Model
     }
 
     /**
+     * Every active family's raw rows for the Data Completeness report: the head
+     * records (memberID = headID) and the member records under them, carrying
+     * exactly the columns whose blanks the report chases. Gap computation and
+     * shaping live in DashboardPageBuilder; the model owns only the query. A
+     * soft-deleted head removes the family; a soft-deleted member is simply
+     * absent.
+     *
+     * @return array{heads: list<array<string, string|null>>, members: list<array<string, string|null>>}
+     */
+    public function completenessRows(): array
+    {
+        $heads = $this->builder()
+            ->select('memberID, firstname, lastname, address, barangayID, birthday, sex, civilstatus, education, job, salary')
+            ->where('memberID = headID', null, false)
+            ->where('dt_deleted IS NULL')
+            ->get()
+            ->getResultArray();
+
+        $members = $this->builder()
+            ->select('memberID, headID, firstname, lastname, relationship, birthday, sex, civilstatus, education, job, salary')
+            ->where('memberID != headID', null, false)
+            ->where('dt_deleted IS NULL')
+            ->get()
+            ->getResultArray();
+
+        return ['heads' => $heads, 'members' => $members];
+    }
+
+    /**
      * Total heads matching $filter, ignoring any 'limit'. Backs the Control
      * Numbers preview header ("N cards will be generated") so the count is always
      * the full selection even when only the first rows are rendered.

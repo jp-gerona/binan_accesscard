@@ -30,7 +30,7 @@ app.indexPage = ''
 #--------------------------------------------------------------------
 # DATABASE
 #
-# Import accesscardV22.sql into the database named here first.
+# Import accesscardV23.sql into the database named here first.
 #--------------------------------------------------------------------
 
 database.default.hostname = 127.0.0.1

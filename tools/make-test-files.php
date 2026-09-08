@@ -9,11 +9,11 @@
  *
  *   family-import-100A.xlsx      — 100 people, clean valid families (import first).
  *   family-import-100B.xlsx      — 100 people, clean valid families, no overlap with A.
- *   family-import-ALL-ERRORS.xlsx — every red (blocking) + yellow (warning) code, with
- *                                   COMPLETE head data (no blank required fields).
- *   family-import-C-10k-clean.xlsx  — 10,000 people, all clean (bulk load test).
- *   family-import-D-10k-errors.xlsx — 10,000 people, ~1,000 with a seeded field-level error,
- *                                     the rest clean (bulk load + error-handling test).
+ *   family-import-ALL-ERRORS.xlsx — every remaining blocking code plus warning coverage,
+ *                                   including incomplete profile fields.
+ *   family-import-C-10k-clean.xlsx  — 10,000 people, all warning-free (bulk load test).
+ *   family-import-D-10k-errors.xlsx — 10,000 people, ~1,000 with a seeded field-level issue,
+ *                                     the rest warning-free (bulk load + error-handling test).
  *
  *   php tools/make-test-files.php
  *
@@ -22,8 +22,15 @@
  * ADD-MEMBER) reference the REFERENCE FAMILIES file A creates (QR 1-5). Import 100A
  * first, THEN ALL-ERRORS. The non-DB codes fire on their own.
  *
- * The only code deliberately NOT included is REQUIRED (a blank required field) — the point of
- * this file is COMPLETE data that still has errors.
+ * Expected ALL-ERRORS seed coverage:
+ *   blocking: QR-TAKEN x1, HEAD-MULTI x1, FP-ADDR x1, HEAD-NONE x1,
+ *     REQUIRED x2, LENGTH x1, QR-01 x1, QR-FORMAT x1, QR-05 x1,
+ *     QR-07 x1, QR-08 x1, QR-12 x1.
+ *   warnings: DUP-EXISTS x2, DUP-DIFF x1, ADD-MEMBER x1, DUP-DB x1,
+ *     INCOMPLETE x6, SERVICE x1, BRGY x1, SEX x1, BDAY x1, BDAY-FUTURE x1,
+ *     INCOME x1, CONTACT x1, SUFFIX x1, BDAY-RANGE x1, SECTOR x1,
+ *     DUP-PERSON x1, QR-CONTIG x1, QR-11 x1.
+ *   row counts: 100A=100, 100B=100, ALL-ERRORS=41, C=10000, D=10000.
  */
 
 use CodeIgniter\Boot;
@@ -103,7 +110,7 @@ function fillOptional(array $rows): array
     global $RELIG_OPT;
 
     // Same index => aligned sector/service pair, so a sector's services actually match it.
-    $sectorPool  = ['SC', 'PWD', 'SP', 'B', 'OFW', 'IP', 'OTHER'];
+    $sectorPool  = ['SC', 'PWD', 'SP', 'B', 'OFW', 'IP', 'IW'];
     $servicePool = ['SC1, SC2', 'PWD1, PWD3', 'SP1', 'B2, B3', 'FA6, EDA5', 'SWPS4, 4PS', 'FA2'];
 
     $i = 0;
@@ -234,7 +241,7 @@ function generateClean(int $startQr, int $target, int $baseYear, int $nameSkew):
     return ['rows' => $rows, 'nextQr' => $qr];
 }
 
-/** All-errors rows. Every head keeps COMPLETE data using dropdown values; the error is never a blank required field. */
+/** All-errors rows. Identity and structure blockers are explicit; warning seeds may be blank. */
 function errorRows(): array
 {
     $byQr = [];
@@ -279,17 +286,24 @@ function errorRows(): array
         mkRow('9100003', 'Spouse', 'Dela Rosa', 'Rosa', 'Cruz', '', '06-02-1978', 'Female', 'M - Married', '09171230005', 'Roman Catholic', 'HS - High School', 'Homemaker', 'No regular income', '88 Molave St.', 'Poblacion'),
         mkRow('9100003', 'Child', 'Dela Rosa', 'Mark', 'Cruz', '', '01-30-2010', 'Male', 'S - Single', '', '', 'E - Elementary', 'Student', 'No regular income', '', ''),
 
-        // ===== RED: field-level (cell FILLED but invalid — data still complete) =====
+        // ===== YELLOW: field-level warnings (cell filled but invalid) ==============
         // SEX invalid (all other dropdowns valid).
         mkRow('9100004', 'Head', 'Lopez', 'Andres', 'Vega', '', '02-02-1980', 'Malee', 'M - Married', '09171230006', 'Roman Catholic', 'HS - High School', 'Factory Worker', 'PHP 8,000 - 13,000', '77 Sampaguita St.', 'Zapote'),
         // BDAY invalid date.
         mkRow('9100005', 'Head', 'Ramos', 'Nilo', 'Cruz', '', '31-31-2000', 'Male', 'S - Single', '09171230007', 'Roman Catholic', 'HS - High School', 'Driver', 'PHP 8,000 - 13,000', '4 Narra St.', 'Malaban'),
-        // INCOME not a bracket/number (the one place we can't use the dropdown — that's the error).
+        // BDAY-FUTURE future date (warns, imports blank).
+        mkRow('9100014', 'Head', 'Ramos', 'Iris', 'Lim', '', '01-01-2050', 'Female', 'S - Single', '09171230028', 'Roman Catholic', 'HS - High School', 'Student', 'No regular income', '4 Narra St.', 'Malaban'),
+        // INCOME not a bracket/number (warning; currency-prefixed values such as P3000 pass).
         mkRow('9100006', 'Head', 'Flores', 'Rene', 'Lim', '', '03-03-1979', 'Male', 'M - Married', '09171230008', 'Roman Catholic', 'HS - High School', 'Vendor', 'plenty', '9 Ilang St.', 'Ganado'),
-        // SERVICE unknown code.
+        // SERVICE unknown code (typo aliases are accepted, unknown tokens warn and skip).
         mkRow('9100007', 'Head', 'Castro', 'Fely', 'Go', '', '04-04-1982', 'Female', 'S - Single', '09171230009', 'Roman Catholic', 'CG - College Graduate', 'Teacher', 'PHP 18,001 - 25,000', '3 Ipil St.', 'Platero', '', 'ZZZ'),
+        // ===== RED: over-long value ================================================
         // LENGTH: first name over 100 chars.
         mkRow('9100008', 'Head', 'Mercado', $longName, '', '', '05-05-1981', 'Male', 'M - Married', '09171230010', 'Roman Catholic', 'HS - High School', 'Office Staff', 'PHP 8,000 - 13,000', '3 Ilang St.', 'Santo Domingo'),
+
+        // REQUIRED: blank names remain blocking (one blank last name and one blank first name).
+        mkRow('9100020', 'Head', '', 'Nena', 'Uy', '', '05-06-1981', 'Female', 'S - Single', '09171230020', 'Roman Catholic', 'HS - High School', 'Office Staff', 'PHP 8,000 - 13,000', '3 Ilang St.', 'Santo Domingo'),
+        mkRow('9100021', 'Head', 'Mercado', '', 'Uy', '', '05-07-1981', 'Male', 'S - Single', '09171230021', 'Roman Catholic', 'HS - High School', 'Office Staff', 'PHP 8,000 - 13,000', '3 Ilang St.', 'Santo Domingo'),
 
         // ===== RED: bad QR cells (rest of the row is complete) =====================
         mkRow('',           'Head', 'Blanco',  'Nilo', 'Uy', '', '05-05-1985', 'Male',   'S - Single', '09171230011', 'Roman Catholic', 'HS - High School', 'Driver', 'PHP 8,000 - 13,000', '4 Narra St.', 'Malaban'),  // QR-01
@@ -300,9 +314,18 @@ function errorRows(): array
         mkRow('=A4',        'Head', 'Formula', 'Fely', 'Go', '', '05-10-1985', 'Female', 'S - Single', '09171230016', 'Roman Catholic', 'HS - High School', 'Vendor', 'PHP 8,000 - 13,000', '9 Narra St.', 'Malaban'),  // QR-12
 
         // ===== YELLOW: field-level warnings (complete data) =======================
-        // Four warnings on one complete row: BRGY (unofficial), CONTACT (short), SUFFIX
-        // ("Junior" -> "Jr"), BDAY-RANGE (born 1850). Other dropdowns are valid.
-        mkRow('9100009', 'Head', 'Ocampo', 'Ignacio', 'Reyes', 'Junior', '01-01-1850', 'Male', 'W - Widow / Widower', '12345', 'Roman Catholic', 'E - Elementary', 'Retired', 'Below PHP 8,000', '10 Kalachuchi St.', 'Barangay Wakanda'),
+        // Five warnings on one row: BRGY (unofficial), CONTACT (short), SUFFIX
+        // ("Junior" -> "Jr"), BDAY-RANGE (born 1850), and SECTOR (unrecognized token).
+        mkRow('9100009', 'Head', 'Ocampo', 'Ignacio', 'Reyes', 'Junior', '01-01-1850', 'Male', 'W - Widow / Widower', '12345', 'Roman Catholic', 'E - Elementary', 'Retired', 'Below PHP 8,000', '10 Kalachuchi St.', 'Barangay Wakanda', 'ZZ9'),
+
+        // ===== YELLOW: incomplete profile fields ================================
+        // Each row has one blank profile field and otherwise valid head data.
+        mkRow('9100022', 'Head', 'Ocampo', 'Nina', 'Reyes', '', '01-02-1980', 'Female', 'S - Single', '09171230022', 'Roman Catholic', 'HS - High School', 'Teacher', '', '10 Kalachuchi St.', 'Poblacion'),
+        mkRow('9100023', 'Head', 'Ocampo', 'Nina', 'Cruz', '', '01-03-1980', 'Female', 'S - Single', '09171230023', 'Roman Catholic', 'HS - High School', '', 'PHP 18,001 - 25,000', '10 Kalachuchi St.', 'Poblacion'),
+        mkRow('9100024', 'Head', 'Ocampo', 'Nina', 'Lim', '', '01-04-1980', 'Female', 'S - Single', '09171230024', 'Roman Catholic', '', 'Teacher', 'PHP 18,001 - 25,000', '10 Kalachuchi St.', 'Poblacion'),
+        mkRow('9100025', 'Head', 'Ocampo', 'Nina', 'Diaz', '', '01-05-1980', 'Female', '', '09171230025', 'Roman Catholic', 'HS - High School', 'Teacher', 'PHP 18,001 - 25,000', '10 Kalachuchi St.', 'Poblacion'),
+        mkRow('9100026', 'Head', 'Ocampo', 'Nina', 'Go', '', '01-06-1980', '', 'S - Single', '09171230026', 'Roman Catholic', 'HS - High School', 'Teacher', 'PHP 18,001 - 25,000', '10 Kalachuchi St.', 'Poblacion'),
+        mkRow('9100027', 'Head', 'Ocampo', 'Nina', 'Sy', '', '', 'Female', 'S - Single', '09171230027', 'Roman Catholic', 'HS - High School', 'Teacher', 'PHP 18,001 - 25,000', '10 Kalachuchi St.', 'Poblacion'),
 
         // DUP-PERSON: the same child typed twice in one family (head is complete).
         mkRow('9100010', 'Head',  'Navarro', 'Luis', 'Cruz', '', '03-03-1975', 'Male',   'M - Married', '09171230017', 'Roman Catholic', 'HS - High School', 'Driver', 'PHP 13,001 - 18,000', '21 Molave St.', 'Langkiwa'),
@@ -337,16 +360,17 @@ function corruptRows(array $rows, int $count): array
     // [column index, bad value] — one cell each. Cols: 3=FirstName 5=Suffix 6=Birthday 7=Sex
     // 9=Contact 13=MonthlyIncome 15=Barangay 17=Services.
     $corruptions = [
-        [7, 'Malee'],              // SEX invalid
-        [6, '31-31-2000'],         // BDAY invalid date
+        [7, 'Malee'],              // SEX invalid warning
+        [6, '31-31-2000'],         // BDAY invalid date warning
         [6, '01-01-1850'],         // BDAY-RANGE (implausibly old) warning
-        [13, 'plenty'],            // INCOME not a bracket/number
+        [13, 'plenty'],            // INCOME invalid warning
         [9, '12345'],              // CONTACT too short warning
         [15, 'Barangay Wakanda'],  // BRGY not an official barangay warning
         [5, 'Junior'],             // SUFFIX not a dropdown code warning
-        [3, $longName],            // LENGTH (first name > 100 chars)
-        [17, 'ZZZ'],               // SERVICE unknown code
-        [3, ''],                   // REQUIRED (blank required first name)
+        [3, $longName],            // LENGTH (first name > 100 chars) blocker
+        [17, 'ZZZ'],               // SERVICE unknown code warning
+        [13, ''],                  // INCOMPLETE (blank profile field) warning
+        [3, ''],                   // REQUIRED (blank required first name) blocker
     ];
 
     $total  = count($rows);

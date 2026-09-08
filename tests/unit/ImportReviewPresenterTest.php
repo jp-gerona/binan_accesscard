@@ -282,6 +282,108 @@ final class ImportReviewPresenterTest extends CIUnitTestCase
         $this->assertNotContains('QR-11', array_column($summary['codes'], 'code'));
     }
 
+    public function testMissingAndAssignedIssueLabelsDescribeTheSpecificFieldAndOutcome(): void
+    {
+        $result = [
+            'rows' => [
+                $this->row(3, '6001', 'Head'),
+                $this->row(4, '6002', 'Head'),
+                $this->row(5, '6003', 'Head'),
+                $this->row(6, '6004', 'Head'),
+            ],
+            'errors' => [
+                $this->error(3, '6001', 'REQUIRED', 'blocking', 'firstname'),
+                $this->error(4, '6002', 'INCOMPLETE', 'warning', 'monthlyincome'),
+                $this->error(5, '6003', 'SERVICE', 'blocking', 'services'),
+                $this->error(6, '6004', 'QR-TAKEN', 'blocking', 'familyno'),
+            ],
+        ];
+
+        $page = $this->page($result);
+        $issue = $page['rows'][0]['issues'][0];
+        $incomeIssue = $page['rows'][1]['issues'][0];
+        $serviceIssue = $page['rows'][2]['issues'][0];
+        $takenIssue = $page['rows'][3]['issues'][0];
+
+        $this->assertSame('Missing FirstName', $issue['label']);
+        $this->assertSame('Missing Income', $incomeIssue['label']);
+        $this->assertSame('Invalid Service Code', $serviceIssue['label']);
+        $this->assertSame('QR already assigned to another family', $takenIssue['label']);
+
+        $labels = array_column((new ImportReviewPresenter())->build($result)['codes'], 'label', 'code');
+        $this->assertSame($issue['label'], $labels['REQUIRED']);
+        $this->assertSame($incomeIssue['label'], $labels['INCOMPLETE']);
+        $this->assertSame($serviceIssue['label'], $labels['SERVICE']);
+        $this->assertSame($takenIssue['label'], $labels['QR-TAKEN']);
+    }
+
+    public function testMissingIssuesRetainEveryFieldLabelAndTheCodeFilterNamesAllFields(): void
+    {
+        $result = [
+            'rows' => [$this->row(3, '6001', 'Head')],
+            'errors' => [
+                $this->error(3, '6001', 'REQUIRED', 'blocking', 'firstname'),
+                $this->error(3, '6001', 'REQUIRED', 'blocking', 'lastname'),
+                $this->error(3, '6001', 'INCOMPLETE', 'warning', 'birthday'),
+                $this->error(3, '6001', 'INCOMPLETE', 'warning', 'monthlyincome'),
+            ],
+        ];
+
+        $labels = array_column($this->page($result)['rows'][0]['issues'], 'label');
+        sort($labels);
+
+        $this->assertSame([
+            'Missing Birthday',
+            'Missing FirstName',
+            'Missing Income',
+            'Missing LastName',
+        ], $labels);
+
+        $filterLabels = array_column((new ImportReviewPresenter())->build($result)['codes'], 'label', 'code');
+        $this->assertSame('Missing FirstName, Missing LastName', $filterLabels['REQUIRED']);
+        $this->assertSame('Missing Birthday, Missing Income', $filterLabels['INCOMPLETE']);
+    }
+
+    public function testIssuesCarryTheirExcelCellReference(): void
+    {
+        $result = [
+            'rows' => [['sheetRow' => 42, 'data' => [
+                'familyno' => '6001', 'relationship' => 'Head',
+                'firstname' => 'Juan', 'lastname' => 'Cruz', 'monthlyincome' => '',
+            ]]],
+            'errors' => [[
+                'sheetRow' => 42, 'familyNo' => '6001', 'field' => 'monthlyincome',
+                'code' => 'INCOMPLETE', 'message' => 'Monthly Income is blank - imports with no monthly income.',
+                'severity' => 'warning',
+            ]],
+            'columns' => ['monthlyincome' => 'N'],
+        ];
+
+        $page = $this->page($result);
+        $issue = $page['rows'][0]['issues'][0];
+
+        $this->assertSame('INCOMPLETE', $issue['code']);
+        $this->assertSame('N42', $issue['cell']);
+    }
+
+    public function testNewCodesHaveLabels(): void
+    {
+        // codesPresent() falls back to the raw code when GROUPS has no entry, which
+        // renders as "INCOMPLETE" in the filter; every code the importer can now
+        // emit needs a label.
+        $result = ['rows' => [], 'errors' => [
+            ['sheetRow' => 1, 'familyNo' => '6001', 'field' => 'birthday', 'code' => 'BDAY-FUTURE', 'message' => 'x', 'severity' => 'warning'],
+            ['sheetRow' => 1, 'familyNo' => '6001', 'field' => 'birthday', 'code' => 'INCOMPLETE', 'message' => 'x', 'severity' => 'warning'],
+            ['sheetRow' => 1, 'familyNo' => '6001', 'field' => 'sector', 'code' => 'SECTOR', 'message' => 'x', 'severity' => 'warning'],
+        ]];
+
+        $codes = array_column((new ImportReviewPresenter())->build($result)['codes'], 'label', 'code');
+
+        $this->assertSame('Future birthday (imports blank)', $codes['BDAY-FUTURE']);
+        $this->assertSame('Missing Birthday', $codes['INCOMPLETE']);
+        $this->assertSame('Invalid Sector Code', $codes['SECTOR']);
+    }
+
     public function testRowFetchesOneShapedRowBySheetRow(): void
     {
         $result = [
@@ -295,6 +397,48 @@ final class ImportReviewPresenterTest extends CIUnitTestCase
         $this->assertSame(4, $row['sheetRow']);
         $this->assertSame('blocking', $row['severity']);
         $this->assertNull((new ImportReviewPresenter())->row($result, 999));
+    }
+
+    public function testDiscardedRowsAreShownMutedWithoutTheirActiveErrorsOrEditors(): void
+    {
+        $result = [
+            'rows' => [$this->row(589, '6001', 'Head'), $this->row(590, '6001', 'Head')],
+            'errors' => [
+                $this->error(589, '6001', 'DUP-ROW', 'blocking', null),
+                $this->error(590, '6001', 'DUP-ROW', 'blocking', null),
+            ],
+            'discarded' => [590 => ['keptRow' => 589, 'reason' => 'duplicate']],
+            'duplicateGroups' => [['rows' => [589, 590], 'qr' => '6001']],
+        ];
+
+        $all = $this->page($result);
+        $row = $all['rows'][1];
+
+        $this->assertTrue($row['discarded']);
+        $this->assertSame('Discarded as duplicate of row 589', $row['issues'][0]['label']);
+        $this->assertSame([], $row['fields']);
+        $this->assertNull($row['duplicateGroup']);
+
+        $discarded = $this->page($result, ['severity' => 'discarded']);
+        $this->assertSame([590], array_column($discarded['rows'], 'sheetRow'));
+
+        $blocking = $this->page($result, ['severity' => 'blocking']);
+        $this->assertSame([589], array_column($blocking['rows'], 'sheetRow'));
+    }
+
+    public function testAnActiveDuplicateRowCarriesItsResolverGroup(): void
+    {
+        $page = $this->page([
+            'rows' => [$this->row(589, '6001', 'Head'), $this->row(590, '6001', 'Head')],
+            'errors' => [
+                $this->error(589, '6001', 'DUP-ROW', 'blocking', null),
+                $this->error(590, '6001', 'DUP-ROW', 'blocking', null),
+            ],
+            'duplicateGroups' => [['rows' => [589, 590], 'qr' => '6001']],
+        ]);
+
+        $this->assertFalse($page['rows'][0]['discarded']);
+        $this->assertSame([589, 590], $page['rows'][0]['duplicateGroup']['rows']);
     }
 
     /** @param array<string, mixed> $query */
