@@ -66,13 +66,22 @@ $fieldData = [
                     </a>
                     <div class="stepper-step-content d-none" id="section-head" data-entry-section>
                         <?= view('Family/_fields', $fieldData + ['part' => 'head']) ?>
+                    </div>
+                </li>
+
+                <li class="stepper-step" data-state="upcoming">
+                    <a class="stepper-step-link" href="#section-media" aria-disabled="true">
+                        <span class="stepper-step-indicator" aria-hidden="true">3</span>
+                        <span class="stepper-step-label"><span class="visually-hidden" data-step-state-prefix>Locked, </span>Photo & Signature</span>
+                    </a>
+                    <div class="stepper-step-content d-none" id="section-media" data-entry-section>
                         <?= view('Family/_media_fields') ?>
                     </div>
                 </li>
 
                 <li class="stepper-step" data-state="upcoming">
                     <a class="stepper-step-link" href="#section-members" aria-disabled="true">
-                        <span class="stepper-step-indicator" aria-hidden="true">3</span>
+                        <span class="stepper-step-indicator" aria-hidden="true">4</span>
                         <span class="stepper-step-label"><span class="visually-hidden" data-step-state-prefix>Locked, </span>Members of the Family</span>
                     </a>
                     <div class="stepper-step-content d-none" id="section-members" data-entry-section>

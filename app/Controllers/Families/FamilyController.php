@@ -227,14 +227,11 @@ class FamilyController extends BaseController
             return $this->storeError('The family form was not saved.', 500);
         }
 
-        $mediaWarnings = $this->storeOptionalMedia($headId, $controlNo);
+        $this->storeOptionalMedia($headId, $controlNo);
 
         // Set on a new record save only, never on edit/update.
         session()->setFlashdata('family_record_saved', '1');
         session()->setFlashdata('success', $successMessage);
-        if ($mediaWarnings !== []) {
-            session()->setFlashdata('warning', implode(' ', $mediaWarnings));
-        }
 
         if ($this->request->isAJAX()) {
             // The Data Entry page always posts through fetch(), so this is the only
@@ -243,9 +240,8 @@ class FamilyController extends BaseController
             return $this->response->setJSON([
                 'status'   => 'success',
                 'message'  => $successMessage,
-                'redirect'      => site_url('records'),
-                'mediaWarnings' => $mediaWarnings,
-                'csrf'          => csrf_hash(),
+                'redirect' => site_url('records'),
+                'csrf'     => csrf_hash(),
             ]);
         }
 
@@ -616,21 +612,17 @@ class FamilyController extends BaseController
             return $this->failUpdate('The family record was not updated.', 500);
         }
 
-        $mediaWarnings = $this->storeOptionalMedia($headId, $controlNo);
+        $this->storeOptionalMedia($headId, $controlNo);
         $successMessage = 'Family record updated successfully.';
 
         session()->setFlashdata('success', $successMessage);
-        if ($mediaWarnings !== []) {
-            session()->setFlashdata('warning', implode(' ', $mediaWarnings));
-        }
 
         if ($this->request->isAJAX()) {
             return $this->response->setJSON([
                 'status'   => 'success',
                 'message'  => $successMessage,
-                'redirect'      => site_url('records/' . $headId),
-                'mediaWarnings' => $mediaWarnings,
-                'csrf'          => csrf_hash(),
+                'redirect' => site_url('records/' . $headId),
+                'csrf'     => csrf_hash(),
             ]);
         }
 

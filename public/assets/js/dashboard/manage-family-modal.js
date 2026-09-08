@@ -2220,17 +2220,18 @@
         function setStepStates(unlocked) {
             var steps = document.querySelectorAll('#entrySpine .stepper-step');
 
-            if (steps.length < 3) {
+            if (steps.length < 4) {
                 return;
             }
 
-            // Once the gate opens both later steps are editable, so neither may keep
+            // Once the gate opens all later steps are editable, so none may keep
             // the muted 'upcoming' look: a step you can type into must not read as
             // locked. 'available' is the unlocked-but-not-focused state, and the
             // focus tracking below moves 'current' onto whichever one is in use.
             steps[0].setAttribute('data-state', unlocked ? 'done' : 'current');
             steps[1].setAttribute('data-state', unlocked ? 'current' : 'upcoming');
             steps[2].setAttribute('data-state', unlocked ? 'available' : 'upcoming');
+            steps[3].setAttribute('data-state', unlocked ? 'available' : 'upcoming');
 
             setStepLink(steps[0], {
                 current: !unlocked,
@@ -2243,6 +2244,11 @@
                 prefixText: unlocked ? '' : 'Locked, '
             });
             setStepLink(steps[2], {
+                current: false,
+                disabled: !unlocked,
+                prefixText: unlocked ? '' : 'Locked, '
+            });
+            setStepLink(steps[3], {
                 current: false,
                 disabled: !unlocked,
                 prefixText: unlocked ? '' : 'Locked, '

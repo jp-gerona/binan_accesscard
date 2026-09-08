@@ -337,7 +337,7 @@ class FamilyExcelTemplate
      * Builds the Check-column formula for one row. Blank rows show nothing; otherwise it
      * reports the first problem found, else "OK". Row conditions: empty QR/relationship/
      * name, and blank income as the yellow incomplete-data outcome. Family-block
-     * conditions read the whole QR + flag columns (COUNTIFS / SUMPRODUCT across the
+     * conditions read the whole QR + flag columns (COUNTIFS across the
      * entry area): no head, multiple heads, two blocks sharing a QR with different
      * head identities, or several addresses under one QR. Columns: A = QR Number,
      * B = Relationship, C = LastName, D = FirstName, N = MonthlyIncome, O = Address.
@@ -356,39 +356,24 @@ class FamilyExcelTemplate
         $c = '$C' . $row;
         $d = '$D' . $row;
         $n = '$N' . $row;
+        $o = '$O' . $row;
 
         $heads = 'COUNTIFS(' . $aRange . ',' . $a . ',' . $bRange . ',"Head")';
-        // Two separated blocks sharing one QR each carry their own Head; distinct head
-        // identities under a QR is the preflight's Duplicate-QR signal. The denominator
-        // mirrors every range (A/B/C/D) in its criteria pairs and appends the &""
-        // sentinel to each criteria range: Excel counts an empty cell as equal to 0,
-        // not to blank, so without the sentinel a blank array position divides by zero;
-        // the sentinel coerces empty criteria to "" which matches blank cells, so no
-        // element divides by zero.
-        $headIdentities = 'SUMPRODUCT((' . $aRange . '=' . $a . ')*(' . $bRange . '="Head")/COUNTIFS(' . $aRange . ',' . $aRange . '&"",' . $bRange . ',' . $bRange . '&"",' . $cRange . ',' . $cRange . '&"",' . $dRange . ',' . $dRange . '&""))';
-        // One QR = one household: more than one non-blank address under a QR means rows
-        // from two different households were pasted together. The denominator mirrors the
-        // A and O ranges in its criteria pairs and appends the &"" sentinel for the same
-        // blank-safe zero-division reason as the head-identity count.
-        $addresses = 'SUMPRODUCT((' . $aRange . '=' . $a . ')*(' . $oRange . '<>"")/COUNTIFS(' . $aRange . ',' . $aRange . '&"",' . $oRange . ',' . $oRange . '&""))';
+        
+        $diffLastNameHeads = 'COUNTIFS(' . $aRange . ',' . $a . ',' . $bRange . ',"Head",' . $cRange . ',"<>"&' . $c . ')';
+        $diffAddresses = 'COUNTIFS(' . $aRange . ',' . $a . ',' . $oRange . ',"<>"&' . $o . ',' . $oRange . ',"<>")';
 
-        // Innermost "OK" first; each issue wraps the previous one as its else-branch,
-        // so the formula evaluates from the outermost check inward. A row with more
-        // than one distinct Head person under a QR is almost certainly two households
-        // sharing it, so Duplicate QR is reported before the leftover extra-heads case;
-        // Missing Income (yellow incomplete data) is reached only when nothing Must fix
-        // is left.
         $formula = '"OK"';
         $checks = [
-            $n . '=""'             => 'Missing Income',
-            $addresses . '>1'       => 'Multiple Addresses in Family',
-            $heads . '>1'           => 'Multiple Heads (Same Family)',
-            $headIdentities . '>1'  => 'Duplicate QR (Multiple Families)',
-            $heads . '=0'           => 'No Head in Family',
-            $d . '=""'             => 'Missing FirstName',
-            $c . '=""'             => 'Missing LastName',
-            $b . '=""'             => 'Missing Relationship',
-            $a . '=""'             => 'Missing QR',
+            $n . '=""'                                         => 'Missing Income',
+            'AND(' . $a . '<>"",' . $diffAddresses . '>0)'     => 'Multiple Addresses in Family',
+            'AND(' . $a . '<>"",' . $heads . '>1)'             => 'Multiple Heads (Same Family)',
+            'AND(' . $a . '<>"",' . $diffLastNameHeads . '>0)' => 'Duplicate QR (Multiple Families)',
+            'AND(' . $a . '<>"",' . $heads . '=0)'             => 'No Head in Family',
+            $d . '=""'                                         => 'Missing FirstName',
+            $c . '=""'                                         => 'Missing LastName',
+            $b . '=""'                                         => 'Missing Relationship',
+            $a . '=""'                                         => 'Missing QR',
         ];
 
         foreach ($checks as $condition => $label) {

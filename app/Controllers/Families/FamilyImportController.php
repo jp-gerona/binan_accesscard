@@ -45,7 +45,9 @@ class FamilyImportController extends BaseController
         $spreadsheet = (new FamilyExcelTemplate())->build();
 
         ob_start();
-        (new Xlsx($spreadsheet))->save('php://output');
+        $writer = new Xlsx($spreadsheet);
+        $writer->setPreCalculateFormulas(false);
+        $writer->save('php://output');
         $content = (string) ob_get_clean();
 
         return $this->response

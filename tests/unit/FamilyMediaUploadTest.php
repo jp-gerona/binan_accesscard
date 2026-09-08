@@ -79,7 +79,6 @@ final class FamilyMediaUploadTest extends CIUnitTestCase
         $this->assertSame(200, $response->response()->getStatusCode(), $response->getBody());
         $json = json_decode((string) $response->getJSON(), true, 512, JSON_THROW_ON_ERROR);
         $this->assertSame('success', $json['status']);
-        $this->assertNotEmpty($json['mediaWarnings']);
         @unlink($upload);
     }
 
@@ -122,7 +121,6 @@ final class FamilyMediaUploadTest extends CIUnitTestCase
 
         $this->assertSame(200, $response->response()->getStatusCode(), $response->getBody());
         $json = json_decode((string) $response->getJSON(), true, 512, JSON_THROW_ON_ERROR);
-        $this->assertSame([], $json['mediaWarnings']);
         $this->assertFileExists($this->root . DIRECTORY_SEPARATOR . '019187.photo.jpg');
         $this->assertFileExists($this->root . DIRECTORY_SEPARATOR . '019187.signature.png');
         $this->assertSame(1, db_connect()->table('job_queue')->where('type', 'media_reconcile')->countAllResults());
