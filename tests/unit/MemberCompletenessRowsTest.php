@@ -39,11 +39,11 @@ final class MemberCompletenessRowsTest extends CIUnitTestCase
         // A member under head 1 with no education; a soft-deleted member that
         // must not appear at all.
         $db->table('member')->insert([
-            'memberID' => 3, 'headID' => 1, 'firstname' => 'ANA', 'lastname' => 'FIXTURE',
+            'memberID' => 3, 'headID' => 1, 'firstname' => 'ANA', 'middlename' => '', 'lastname' => 'FIXTURE',
             'relationship' => 'CHILD', 'education' => null, 'barangayID' => 1,
         ]);
         $db->table('member')->insert([
-            'memberID' => 4, 'headID' => 1, 'firstname' => 'OLD', 'lastname' => 'GONE',
+            'memberID' => 4, 'headID' => 1, 'firstname' => 'OLD', 'middlename' => '', 'lastname' => 'GONE',
             'relationship' => 'CHILD', 'dt_deleted' => '2026-01-01 00:00:00',
         ]);
 

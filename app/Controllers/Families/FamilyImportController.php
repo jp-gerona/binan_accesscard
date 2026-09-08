@@ -50,7 +50,7 @@ class FamilyImportController extends BaseController
 
         return $this->response
             ->setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-            ->setHeader('Content-Disposition', 'attachment; filename="family-import-template.xlsx"')
+            ->setHeader('Content-Disposition', 'attachment; filename="family-import-template-v4.xlsx"')
             ->setHeader('Cache-Control', 'max-age=0')
             ->setBody($content);
     }

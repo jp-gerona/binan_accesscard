@@ -71,7 +71,11 @@ class FamilyExcelTemplate
         'Job', 'MonthlyIncome', 'Address', 'Barangay', 'Sector', 'Services',
     ];
 
-    /** Always-required columns (every person) - marked with " *". */
+    /**
+     * Starred columns (" *"): needed for a COMPLETE record, not before import.
+     * A blank value imports as missing and the family enters Data Completeness
+     * until the data is collected.
+     */
     private const ALWAYS_REQUIRED = ['QR Number', 'Relationship', 'FirstName', 'LastName', 'Birthday', 'Sex', 'CivilStatus', 'Education', 'Job', 'MonthlyIncome'];
 
     /** Columns required only on the Head row (members inherit) - flagged via a header comment. */
@@ -262,7 +266,7 @@ class FamilyExcelTemplate
 
         $lastColumn = $this->columnLetter(count(self::COLUMNS));
         $noteRow = 8;
-        $sheet->setCellValue('A' . $noteRow, 'Examples only - enter real data on the "' . self::DATA_SHEET . '" sheet. One row per person. Name order is Last Name, First Name, Middle Name. Birthday is MM-DD-YYYY. Mark each head of family with Relationship = Head. Put as many families as you like in one file: each family gets its own QR number, shared by its members. Members leave Address and Barangay blank - they automatically use the head\'s address. SECTOR = WHO the person is (SC, PWD, SP, B, LGBT, OFW, IP, IDP, PDL, or OTHER) and SERVICES = the programs they RECEIVED (e.g. SC1, FA6, EDA5, 4PS) - both take CODES separated by commas; see the Reference sheet. " * " marks columns needed for a COMPLETE record (incl. Birthday, Sex, Civil Status, Education, Job and Monthly Income). Blank cells do not block the import: the row is saved with those fields empty and the family is listed on the Data Completeness report until the data is collected. The Head row also carries the family\'s Address and Barangay.');
+        $sheet->setCellValue('A' . $noteRow, 'Examples only - enter real data on the "' . self::DATA_SHEET . '" sheet. One row per person. Name order is Last Name, First Name, Middle Name. Birthday is MM-DD-YYYY. Mark each head of family with Relationship = Head. Put as many families as you like in one file: each family gets its own QR number, shared by its members. Members leave Address and Barangay blank - they automatically use the head\'s address. SECTOR = WHO the person is (SC, PWD, SP, B, LGBT, OFW, IP, IDP, PDL, or OTHER) and SERVICES = the programs they RECEIVED (e.g. SC1, FA6, EDA5, 4PS) - both take CODES separated by commas; see the Reference sheet. " * " marks the columns needed for a complete record (incl. Birthday, Sex, Civil Status, Education, Job and Monthly Income). Blank values import as missing: they do not block the import, and the family stays on the Data Completeness report until the data is collected. The Head row also carries the family\'s Address and Barangay.');
         $sheet->mergeCells('A' . $noteRow . ':' . $lastColumn . $noteRow);
         $sheet->getStyle('A' . $noteRow)->getAlignment()->setWrapText(true)->setVertical(Alignment::VERTICAL_TOP);
         $sheet->getStyle('A' . $noteRow)->getFont()->setBold(true);
@@ -278,9 +282,10 @@ class FamilyExcelTemplate
 
     /**
      * Adds a helper "Check" column after the data columns: a per-row formula that flags
-     * problems live in Excel (duplicate Head, missing Head, missing required fields),
-     * colored red/green by conditional formatting. The importer ignores this column -
-     * it is convenience feedback only; the server-side import still validates everything.
+     * problems live in Excel (missing fields, head counts, duplicate QR across families,
+     * several addresses under one QR), colored red for Must fix output, yellow for
+     * incomplete-data output (Missing Income), green for OK. Excel-only preflight: the
+     * importer never reads this column - the server-side import validates everything.
      */
     private function addCheckColumn(Worksheet $sheet): void
     {
@@ -299,7 +304,7 @@ class FamilyExcelTemplate
         $sheet->setCellValue($headerCell, 'Check');
         $this->styleFlatHeader($sheet, $headerCell . ':' . $headerCell);
         $sheet->getStyle($headerCell)->getAlignment()->setWrapText(true)->setVertical(Alignment::VERTICAL_CENTER);
-        $sheet->getComment($headerCell)->getText()->createTextRun('Automatic check - fix any row that is not "OK" before importing. This column is ignored on import.');
+        $sheet->getComment($headerCell)->getText()->createTextRun('Excel-only preflight. Fix any row that is not "OK" before importing; a yellow "Missing Income" imports as missing data and enters Data Completeness. This column is ignored on import.');
         $sheet->getColumnDimension($col)->setWidth(26);
 
         // Per-row validation formula.
@@ -307,42 +312,85 @@ class FamilyExcelTemplate
             $sheet->setCellValue($col . $row, $this->checkFormula($row));
         }
 
-        // Red when a problem, green when OK.
+        // Red for Must fix output, yellow for the single incomplete-data outcome
+        // (Missing Income), green when the row is ready.
         $range = $col . self::FIRST_DATA_ROW . ':' . $col . self::LAST_TEMPLATE_ROW;
-        $notOk = new Conditional();
-        $notOk->setConditionType(Conditional::CONDITION_EXPRESSION)->setConditions(['AND($' . $col . self::FIRST_DATA_ROW . '<>"",$' . $col . self::FIRST_DATA_ROW . '<>"OK")']);
-        $notOk->getStyle()->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('FFC7CE');
-        $notOk->getStyle()->getFill()->getEndColor()->setRGB('FFC7CE');
-        $notOk->getStyle()->getFont()->setBold(true)->getColor()->setRGB('9C0006');
+        $mustFix = new Conditional();
+        $mustFix->setConditionType(Conditional::CONDITION_EXPRESSION)->setConditions(['AND($' . $col . self::FIRST_DATA_ROW . '<>"",$' . $col . self::FIRST_DATA_ROW . '<>"OK",$' . $col . self::FIRST_DATA_ROW . '<>"Missing Income")']);
+        $mustFix->getStyle()->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('FFC7CE');
+        $mustFix->getStyle()->getFill()->getEndColor()->setRGB('FFC7CE');
+        $mustFix->getStyle()->getFont()->setBold(true)->getColor()->setRGB('9C0006');
+        $incomplete = new Conditional();
+        $incomplete->setConditionType(Conditional::CONDITION_EXPRESSION)->setConditions(['$' . $col . self::FIRST_DATA_ROW . '="Missing Income"']);
+        $incomplete->getStyle()->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('FFF2CC');
+        $incomplete->getStyle()->getFill()->getEndColor()->setRGB('FFF2CC');
+        $incomplete->getStyle()->getFont()->setBold(true)->getColor()->setRGB('7F6000');
         $ok = new Conditional();
         $ok->setConditionType(Conditional::CONDITION_EXPRESSION)->setConditions(['$' . $col . self::FIRST_DATA_ROW . '="OK"']);
         $ok->getStyle()->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('C6EFCE');
         $ok->getStyle()->getFill()->getEndColor()->setRGB('C6EFCE');
         $ok->getStyle()->getFont()->getColor()->setRGB('006100');
-        $sheet->getStyle($range)->setConditionalStyles([$notOk, $ok]);
+        $sheet->getStyle($range)->setConditionalStyles([$mustFix, $incomplete, $ok]);
     }
 
     /**
      * Builds the Check-column formula for one row. Blank rows show nothing; otherwise it
-     * reports the first problem found, else "OK": missing QR/name, or the wrong number
-     * of Head rows per family (COUNTIFS over the QR + Relationship columns). Columns:
-     * A = QR Number, C = LastName, D = FirstName.
+     * reports the first problem found, else "OK". Row conditions: empty QR/relationship/
+     * name, and blank income as the yellow incomplete-data outcome. Family-block
+     * conditions read the whole QR + flag columns (COUNTIFS / SUMPRODUCT across the
+     * entry area): no head, multiple heads, two blocks sharing a QR with different
+     * head identities, or several addresses under one QR. Columns: A = QR Number,
+     * B = Relationship, C = LastName, D = FirstName, N = MonthlyIncome, O = Address.
      */
     private function checkFormula(int $row): string
     {
+        $from = self::FIRST_DATA_ROW;
+        $to = self::LAST_TEMPLATE_ROW;
+        $aRange = '$A$' . $from . ':$A$' . $to;
+        $bRange = '$B$' . $from . ':$B$' . $to;
+        $cRange = '$C$' . $from . ':$C$' . $to;
+        $dRange = '$D$' . $from . ':$D$' . $to;
+        $oRange = '$O$' . $from . ':$O$' . $to;
         $a = '$A' . $row;
+        $b = '$B' . $row;
         $c = '$C' . $row;
         $d = '$D' . $row;
-        $heads = 'COUNTIFS($A$' . self::FIRST_DATA_ROW . ':$A$' . self::LAST_TEMPLATE_ROW . ',' . $a
-            . ',$B$' . self::FIRST_DATA_ROW . ':$B$' . self::LAST_TEMPLATE_ROW . ',"Head")';
+        $n = '$N' . $row;
 
-        return '=IF(AND(' . $a . '="",' . $c . '="",' . $d . '=""),"",'
-            . 'IF(' . $a . '="","Missing QR Number",'
-            . 'IF(' . $c . '="","Missing LastName",'
-            . 'IF(' . $d . '="","Missing FirstName",'
-            . 'IF(' . $heads . '=0,"No Head in this family",'
-            . 'IF(' . $heads . '>1,"More than one Head",'
-            . '"OK"))))))';
+        $heads = 'COUNTIFS(' . $aRange . ',' . $a . ',' . $bRange . ',"Head")';
+        // Two separated blocks sharing one QR each carry their own Head; distinct head
+        // identities under a QR is the preflight's Duplicate-QR signal.
+        $headIdentities = 'SUMPRODUCT((' . $aRange . '=' . $a . ')*(' . $bRange . '="Head")/COUNTIFS(' . $aRange . ',' . $a . ',' . $bRange . ',"Head",' . $cRange . ',' . $cRange . ',' . $dRange . ',' . $dRange . '))';
+        // One QR = one household: more than one non-blank address under a QR means rows
+        // from two different households were pasted together.
+        $addresses = 'SUMPRODUCT((' . $aRange . '=' . $a . ')*(' . $oRange . '<>"")/COUNTIFS(' . $aRange . ',' . $a . ',' . $oRange . ',' . $oRange . '))';
+
+        // Innermost "OK" first; each issue wraps the previous one as its else-branch,
+        // so the formula evaluates from the outermost check inward. A row with more
+        // than one distinct Head person under a QR is almost certainly two households
+        // sharing it, so Duplicate QR is reported before the leftover extra-heads case;
+        // Missing Income (yellow incomplete data) is reached only when nothing Must fix
+        // is left.
+        $formula = '"OK"';
+        $checks = [
+            $n . '=""'             => 'Missing Income',
+            $addresses . '>1'       => 'Multiple Addresses in Family',
+            $heads . '>1'           => 'Multiple Heads (Same Family)',
+            $headIdentities . '>1'  => 'Duplicate QR (Multiple Families)',
+            $heads . '=0'           => 'No Head in Family',
+            $d . '=""'             => 'Missing FirstName',
+            $c . '=""'             => 'Missing LastName',
+            $b . '=""'             => 'Missing Relationship',
+            $a . '=""'             => 'Missing QR',
+        ];
+
+        foreach ($checks as $condition => $label) {
+            $formula = 'IF(' . $condition . ',"' . $label . '",' . $formula . ')';
+        }
+
+        $blank = 'AND(' . $a . '="",' . $b . '="",' . $c . '="",' . $d . '="")';
+
+        return '=IF(' . $blank . ',"",' . $formula . ')';
     }
 
     // -- shared header pieces --------------------------------------------------
