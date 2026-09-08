@@ -33,11 +33,9 @@ $barangayList = $cardBarangayNames ?? [];
 
 <!-- BATCH -->
 <div id="cn-panel-batch">
-    <div class="card mb-4 sector-management">
-        <div class="card-header">
-            <span><i class="bi bi-collection me-1" aria-hidden="true"></i>Batch Configuration</span>
-        </div>
+    <section class="card batch-card mb-4 sector-management">
         <div class="card-body">
+            <h2 class="batch-pane-title">Batch Configuration</h2>
             <div class="alert alert-primary d-flex align-items-center mb-3 py-2" role="alert">
                 <i class="bi bi-info-circle flex-shrink-0 me-2 fs-5"></i>
                 <div class="small">Leave all fields blank to export all active family heads. Both range bounds are inclusive.</div>
@@ -72,13 +70,11 @@ $barangayList = $cardBarangayNames ?? [];
             </form>
 
         </div>
-    </div>
+    </section>
 
-    <div class="card mb-4 sector-management" id="cn-card-batch">
-        <div class="card-header">
-            <span><i class="bi bi-table me-1" aria-hidden="true"></i>Cards Preview</span>
-        </div>
+    <section class="card batch-card mb-4 sector-management" id="cn-card-batch">
         <div class="card-body">
+            <h2 class="batch-pane-title">Access Cards</h2>
             <?php /* The page search only hides non-matching preview rows already on
                      screen - it never touches the barangay/from/to params, so what
                      Generate cards prints always matches the full selection. */ ?>
@@ -102,22 +98,18 @@ $barangayList = $cardBarangayNames ?? [];
                     </tbody>
                 </table>
             </div>
-        </div>
-        <div class="card-footer small text-muted">
-            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 w-100">
+
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 w-100 mt-3 small text-muted">
                 <div class="table-footer-left"><span id="cn-preview-count" aria-live="polite">Loading preview&hellip;</span></div>
                 <div class="table-footer-right" id="cn-preview-paging"></div>
             </div>
         </div>
-    </div>
+    </section>
 </div>
 
-<!-- SINGLE -->
-<div class="card mb-4 sector-management" id="cn-card-single" hidden>
-    <div class="card-header">
-        <span><i class="bi bi-person-vcard me-1" aria-hidden="true"></i>Individual Configuration</span>
-    </div>
+<section class="card batch-card mb-4 sector-management" id="cn-card-single" hidden>
     <div class="card-body">
+        <h2 class="batch-pane-title">Individual Configuration</h2>
         <div class="alert alert-primary d-flex align-items-center mb-3 py-2" role="alert">
             <i class="bi bi-info-circle flex-shrink-0 me-2 fs-5"></i>
             <div class="small">Enter the exact Control Number of the family head to export their individual card.</div>
@@ -135,7 +127,7 @@ $barangayList = $cardBarangayNames ?? [];
             </div>
         </div>
     </div>
-</div>
+</section>
 
 <style>
 #cn-modes .nav-link { cursor: pointer; }

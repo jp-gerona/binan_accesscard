@@ -91,29 +91,30 @@ foreach ($referenceTabs as $tabKey) {
             ],
         ]],
     ]) ?>
-    <?= view('components/card', [
-        'icon' => 'box-seam',
-        'title' => 'Subsidy Types',
-        'cardClass' => 'sector-management',
-        'bodyView' => 'Admin/subsidy-types-body',
-        'bodyData' => [
-            'subsidyTypes'          => $subsidyTypes ?? [],
-            'currentRole'           => $currentRole ?? '',
-            'canManageSubsidyTypes' => $canManageLookups,
-            'keyword'               => (string) ($subsidyTypeList['keyword'] ?? ''),
-            'status'                => (string) ($subsidyTypeList['status'] ?? 'all'),
-            'perPage'               => (int) ($subsidyTypeList['perPage'] ?? 25),
-            'perPageOptions'        => ($subsidyTypeList['perPageOptions'] ?? []) ?: [10, 25, 50, 100],
-            'listRoute'             => 'reference-data',
-        ],
-        'footer' => view('components/table_footer', [
-            'fromRecord' => (int) ($subsidyTypeList['fromRecord'] ?? 0),
-            'toRecord'   => (int) ($subsidyTypeList['toRecord'] ?? 0),
-            'totalRows'  => (int) ($subsidyTypeList['totalRows'] ?? 0),
-            'page'       => (int) ($subsidyTypeList['page'] ?? 1),
-            'totalPages' => (int) ($subsidyTypeList['totalPages'] ?? 1),
-            'pageUrl'    => $subsidyTypePageUrl,
-        ]),
-    ]) ?>
+    <section class="card batch-card sector-management">
+        <div class="card-body">
+            <h2 class="batch-pane-title">Subsidy Types</h2>
+            <?= view('Admin/subsidy-types-body', [
+                'subsidyTypes'          => $subsidyTypes ?? [],
+                'currentRole'           => $currentRole ?? '',
+                'canManageSubsidyTypes' => $canManageLookups,
+                'keyword'               => (string) ($subsidyTypeList['keyword'] ?? ''),
+                'status'                => (string) ($subsidyTypeList['status'] ?? 'all'),
+                'perPage'               => (int) ($subsidyTypeList['perPage'] ?? 25),
+                'perPageOptions'        => ($subsidyTypeList['perPageOptions'] ?? []) ?: [10, 25, 50, 100],
+                'listRoute'             => 'reference-data',
+            ]) ?>
+            <div class="mt-3 small text-muted">
+                <?= view('components/table_footer', [
+                    'fromRecord' => (int) ($subsidyTypeList['fromRecord'] ?? 0),
+                    'toRecord'   => (int) ($subsidyTypeList['toRecord'] ?? 0),
+                    'totalRows'  => (int) ($subsidyTypeList['totalRows'] ?? 0),
+                    'page'       => (int) ($subsidyTypeList['page'] ?? 1),
+                    'totalPages' => (int) ($subsidyTypeList['totalPages'] ?? 1),
+                    'pageUrl'    => $subsidyTypePageUrl,
+                ]) ?>
+            </div>
+        </div>
+    </section>
     <?= view('Admin/subsidy-type-modal') ?>
 <?php endif; ?>

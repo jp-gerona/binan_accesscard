@@ -37,7 +37,6 @@
     border-bottom: 1px solid #e2e9e7;
 }
 
-
 .actions-menu-toggle {
     display: inline-flex;
     width: 2.35rem;
@@ -508,6 +507,11 @@ div.dt-container div.dt-paging .page-link {
     line-height: 1.2;
 }
 
+div.dt-container div.dt-paging .page-item.disabled .page-link {
+    opacity: 0.5;
+    pointer-events: none;
+}
+
 /* Filter panels (components/records_toolbar*.php). The panel hugs its
    content - a lone Status group stays a small flyout - and caps at the
    viewport so it never overflows on phones. Long option lists scroll inside
@@ -557,8 +561,8 @@ div.dt-container .dt-layout-row {
 }
 
 div.dt-container .dt-layout-cell {
-    padding-left: 0;
-    padding-right: 0;
+    padding-left: 0 !important;
+    padding-right: 0 !important;
 }
 
 /* Match the shared table_controls "Show N entries": DataTables' bootstrap5
@@ -655,4 +659,15 @@ div.dt-container div.dt-search .input-group {
 
 #importReview .js-import-duplicate-panel .btn {
     width: 100%;
+}
+
+/* DataTables 2 Bootstrap 5 bug fix:
+   DataTables CSS zeroes out the negative margins on .row, but its selector to
+   remove padding from the first/last columns (div[class^=col-]) fails because
+   the class string starts with 'd-md-flex', not 'col-'. This leaves 0.75rem
+   padding on the columns, indenting the entire table and search bar.
+   We force the padding to 0 for all immediate children of these rows. */
+div.dt-container > div.row > div {
+    padding-left: 0 !important;
+    padding-right: 0 !important;
 }

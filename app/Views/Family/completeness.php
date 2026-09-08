@@ -85,14 +85,14 @@ foreach (($tiles['byField'] ?? []) as $label => $count) {
   </div>
 </form>
 
-<div class="card mb-4">
-  <div class="card-header d-flex justify-content-between align-items-center">
-    <span><i class="bi bi-clipboard-data me-1" aria-hidden="true"></i>Data Completeness</span>
-    <a class="btn btn-sm btn-outline-primary" href="<?= esc($downloadUrl, 'attr') ?>">
-      <i class="bi bi-file-earmark-arrow-down me-1" aria-hidden="true"></i>Download
-    </a>
-  </div>
+<section class="card batch-card mb-4">
   <div class="card-body">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <h2 class="batch-pane-title mb-0">Data Completeness</h2>
+      <a class="btn btn-sm btn-outline-primary" href="<?= esc($downloadUrl, 'attr') ?>">
+        <i class="bi bi-file-earmark-arrow-down me-1" aria-hidden="true"></i>Download
+      </a>
+    </div>
     <div class="table-responsive">
       <table class="table manage-record-table align-middle w-100 mb-0" id="completenessTable">
         <thead class="table-light">
@@ -144,18 +144,18 @@ foreach (($tiles['byField'] ?? []) as $label => $count) {
         </tbody>
       </table>
     </div>
+    <?php if ($totalFamilies >= 0): ?>
+    <div class="mt-3 small text-muted">
+      <?= view('components/table_footer', [
+          'fromRecord'  => $fromRecord,
+          'toRecord'    => $toRecord,
+          'totalRows'   => $totalFamilies,
+          'page'        => $page,
+          'totalPages'  => $pageCount,
+          'pageUrl'     => $pageUrl,
+          'entityLabel' => 'families',
+      ]) ?>
+    </div>
+    <?php endif; ?>
   </div>
-  <?php if ($totalFamilies > 0): ?>
-  <div class="card-footer small text-muted">
-    <?= view('components/table_footer', [
-        'fromRecord'  => $fromRecord,
-        'toRecord'    => $toRecord,
-        'totalRows'   => $totalFamilies,
-        'page'        => $page,
-        'totalPages'  => $pageCount,
-        'pageUrl'     => $pageUrl,
-        'entityLabel' => 'families',
-    ]) ?>
-  </div>
-  <?php endif; ?>
-</div>
+</section>

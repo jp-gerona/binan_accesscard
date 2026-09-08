@@ -78,7 +78,7 @@ $sectorClearUrl = static function () use ($listRoute, $perPage, $tabParam): stri
     ]],
 ]) ?>
 <?php
-$sectorFooter = ($totalRows ?? 0) > 0 ? view('components/table_footer', [
+$sectorFooter = ($totalRows ?? 0) >= 0 ? view('components/table_footer', [
     'fromRecord' => $fromRecord,
     'toRecord' => $toRecord,
     'totalRows' => $totalRows,
@@ -87,15 +87,19 @@ $sectorFooter = ($totalRows ?? 0) > 0 ? view('components/table_footer', [
     'pageUrl' => $sectorPageUrl,
 ]) : null;
 ?>
-<?= view('components/card', [
-    'icon' => 'diagram-3-fill',
-    'title' => 'Sector Management',
-    'cardClass' => 'sector-management',
-    'attrs' => 'data-sector-management-root',
-    'bodyView' => 'Lookups/sectors-body',
-    'bodyData' => get_defined_vars(),
-    'footer' => $sectorFooter,
-]) ?>
+
+<section class="card batch-card sector-management" data-sector-management-root>
+    <div class="card-body">
+        <h2 class="batch-pane-title">Sectors</h2>
+        <?= view('Lookups/sectors-body', get_defined_vars()) ?>
+        <?php if ($sectorFooter !== null): ?>
+            <div class="mt-3 small text-muted">
+                <?= $sectorFooter ?>
+            </div>
+        <?php endif; ?>
+    </div>
+</section>
+
 
 <?php if ($canManage): ?>
 <?= view('Lookups/sector-modal', [

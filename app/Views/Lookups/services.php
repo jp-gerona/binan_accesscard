@@ -80,7 +80,7 @@ $serviceClearUrl = static function () use ($listRoute, $perPage, $tabParam): str
     ]],
 ]) ?>
 <?php
-$serviceFooter = ($totalRows ?? 0) > 0 ? view('components/table_footer', [
+$serviceFooter = ($totalRows ?? 0) >= 0 ? view('components/table_footer', [
     'fromRecord' => $fromRecord,
     'toRecord' => $toRecord,
     'totalRows' => $totalRows,
@@ -89,15 +89,19 @@ $serviceFooter = ($totalRows ?? 0) > 0 ? view('components/table_footer', [
     'pageUrl' => $servicePageUrl,
 ]) : null;
 ?>
-<?= view('components/card', [
-    'icon' => 'grid-fill',
-    'title' => 'Services and Programs',
-    'cardClass' => 'sector-management',
-    'attrs' => 'data-service-management-root',
-    'bodyView' => 'Lookups/services-body',
-    'bodyData' => get_defined_vars(),
-    'footer' => $serviceFooter,
-]) ?>
+
+<section class="card batch-card sector-management" data-service-management-root>
+    <div class="card-body">
+        <h2 class="batch-pane-title">Services & Programs</h2>
+        <?= view('Lookups/services-body', get_defined_vars()) ?>
+        <?php if ($serviceFooter !== null): ?>
+            <div class="mt-3 small text-muted">
+                <?= $serviceFooter ?>
+            </div>
+        <?php endif; ?>
+    </div>
+</section>
+
 
 <?php if ($canManage): ?>
 <?= view('Lookups/service-modal', [

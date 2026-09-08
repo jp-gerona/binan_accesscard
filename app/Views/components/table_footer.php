@@ -55,7 +55,7 @@ $linkFor = static function (int $target) use ($pageUrl, $prevUrl, $nextUrl, $pag
         <?php endif; ?>
     </div>
     <div class="table-footer-right"<?= $clientKey !== null ? ' data-table-paging="' . esc($clientKey, 'attr') . '"' : '' ?>>
-        <?php if ($clientKey === null && $totalPages > 1): ?>
+        <?php if ($clientKey === null): ?>
             <ul class="pagination pagination-sm m-0">
                 <li class="page-item <?= $page <= 1 ? 'disabled' : '' ?>">
                     <a class="page-link" href="<?= esc($linkFor(1), 'attr') ?>" aria-label="First page" <?= $page <= 1 ? 'tabindex="-1" aria-disabled="true"' : '' ?>>&laquo;</a>

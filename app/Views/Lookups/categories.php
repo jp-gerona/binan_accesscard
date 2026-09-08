@@ -77,7 +77,7 @@ $categoryClearUrl = static function () use ($listRoute, $perPage, $tabParam): st
     ]],
 ]) ?>
 <?php
-$categoryFooter = ($totalRows ?? 0) > 0 ? view('components/table_footer', [
+$categoryFooter = ($totalRows ?? 0) >= 0 ? view('components/table_footer', [
     'fromRecord' => $fromRecord,
     'toRecord' => $toRecord,
     'totalRows' => $totalRows,
@@ -86,15 +86,19 @@ $categoryFooter = ($totalRows ?? 0) > 0 ? view('components/table_footer', [
     'pageUrl' => $categoryPageUrl,
 ]) : null;
 ?>
-<?= view('components/card', [
-    'icon' => 'tags-fill',
-    'title' => 'Manage Categories',
-    'cardClass' => 'sector-management',
-    'attrs' => 'data-category-management-root',
-    'bodyView' => 'Lookups/categories-body',
-    'bodyData' => get_defined_vars(),
-    'footer' => $categoryFooter,
-]) ?>
+
+<section class="card batch-card sector-management" data-category-management-root>
+    <div class="card-body">
+        <h2 class="batch-pane-title">Categories</h2>
+        <?= view('Lookups/categories-body', get_defined_vars()) ?>
+        <?php if ($categoryFooter !== null): ?>
+            <div class="mt-3 small text-muted">
+                <?= $categoryFooter ?>
+            </div>
+        <?php endif; ?>
+    </div>
+</section>
+
 
 <?= view('Lookups/category-modal', [
 	'existingCodes' => $existingCodes,

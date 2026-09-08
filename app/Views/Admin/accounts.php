@@ -68,18 +68,18 @@ $accounts = array_merge($adminAccounts, $employeeAccounts, $viewerAccounts, $sca
         'filterGroups' => [$accountLevelsGroup, $accountStatusesGroup],
     ]) ?>
 
-    <?= view('components/card', [
-        'icon' => 'people-fill',
-        'title' => 'Account Management',
-        'cardClass' => 'account-card',
-        'attrs' => 'aria-labelledby="accounts-title" data-table-paginate data-paginate-key="accounts" data-paginate-label="accounts"',
-        'bodyView' => 'Admin/accounts-body',
-        'bodyData' => [
-            'accounts' => $accounts,
-            'canEditAccounts' => $canEditAccounts,
-            'isDeveloper' => $isDeveloper,
-            'isAdmin' => $isAdmin,
-        ],
-        'footer' => view('components/table_footer', ['clientKey' => 'accounts', 'entityLabel' => 'accounts']),
-    ]) ?>
+    <section class="card batch-card" aria-labelledby="accounts-title" data-table-paginate data-paginate-key="accounts" data-paginate-label="accounts">
+        <div class="card-body">
+            <h2 class="batch-pane-title">Account Management</h2>
+            <?= view('Admin/accounts-body', [
+                'accounts' => $accounts,
+                'canEditAccounts' => $canEditAccounts,
+                'isDeveloper' => $isDeveloper,
+                'isAdmin' => $isAdmin,
+            ]) ?>
+            <div class="mt-3 small text-muted">
+                <?= view('components/table_footer', ['clientKey' => 'accounts', 'entityLabel' => 'accounts']) ?>
+            </div>
+        </div>
+    </section>
 </div>

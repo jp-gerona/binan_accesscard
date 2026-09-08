@@ -104,12 +104,13 @@ if ($canEdit) {
     'filterGroups' => [$sectorOptionsGroup, $barangayOptionsGroup, $statusGroup],
 ]) ?>
 
-<?= view('components/card', [
-    'icon' => 'table',
-    'title' => 'Family Records',
-    'cardClass' => 'overflow-hidden',
-    'bodyClass' => 'd-flex flex-column overflow-hidden p-3',
-    'bodyView' => 'Family/list-body',
-    'bodyData' => [],
-    'footer' => '<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 w-100"><div id="familyFooterLeft"></div><div id="familyFooterRight"></div></div>',
-]) ?>
+<section class="card batch-card">
+    <div class="card-body">
+        <h2 class="batch-pane-title">Family Records</h2>
+        <?= view('Family/list-body') ?>
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 w-100 mt-3">
+            <div id="familyFooterLeft" class="small text-muted"></div>
+            <div id="familyFooterRight"></div>
+        </div>
+    </div>
+</section>

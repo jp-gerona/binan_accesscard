@@ -37,19 +37,19 @@ $distributionTab = in_array($distributionTab, ['schedule', 'batches', 'log'], tr
         ]) ?>
     <?php endif; ?>
 <?php elseif ($distributionTab === 'batches'): ?>
-    <?= view('components/card', [
-        'icon' => 'collection',
-        'title' => 'Distribution Batches',
-        'cardClass' => 'sector-management',
-        'attrs' => 'data-table-paginate data-paginate-key="batches" data-paginate-label="batches"',
-        'bodyView' => 'Admin/distribution-batches-body',
-        'bodyData' => [
-            'batches' => $batches ?? [],
-            'activeBatch' => $activeBatch ?? null,
-            'currentRole' => $currentRole ?? '',
-        ],
-        'footer' => view('components/table_footer', ['clientKey' => 'batches', 'entityLabel' => 'batches']),
-    ]) ?>
+        <section class="card batch-card" data-table-paginate data-paginate-key="batches" data-paginate-label="batches">
+        <div class="card-body">
+            <h2 class="batch-pane-title">Distribution Batches</h2>
+            <?= view('Admin/distribution-batches-body', [
+                'batches' => $batches ?? [],
+                'activeBatch' => $activeBatch ?? null,
+                'currentRole' => $currentRole ?? '',
+            ]) ?>
+            <div class="mt-3 small text-muted">
+                <?= view('components/table_footer', ['clientKey' => 'batches', 'entityLabel' => 'batches']) ?>
+            </div>
+        </div>
+    </section>
     <?php if (in_array($currentRole ?? '', ['Admin', 'Developer'], true)): ?>
         <?= view('Admin/batch-close-modal') ?>
     <?php endif; ?>
@@ -95,7 +95,7 @@ $distributionTab = in_array($distributionTab, ['schedule', 'batches', 'log'], tr
             . ($distPerPage !== 25 ? '<input type="hidden" name="per_page" value="' . esc((string) $distPerPage, 'attr') . '">' : ''),
     ]) ?>
     <?php
-    $distFooter = $distTotalRows > 0 ? view('components/table_footer', [
+    $distFooter = $distTotalRows >= 0 ? view('components/table_footer', [
         'fromRecord' => $distFrom,
         'toRecord' => $distTo,
         'totalRows' => $distTotalRows,
@@ -104,18 +104,20 @@ $distributionTab = in_array($distributionTab, ['schedule', 'batches', 'log'], tr
         'pageUrl' => $distPageUrl,
     ]) : null;
     ?>
-    <?= view('components/card', [
-        'icon' => 'clipboard-check-fill',
-        'title' => 'All Distributions',
-        'cardClass' => 'sector-management',
-        'attrs' => 'aria-label="All distributions" data-distribution-management-root',
-        'bodyView' => 'Admin/distribution-distributions-body',
-        'bodyData' => [
-            'distributions' => $distributions ?? [],
-            'keyword' => $distKeyword,
-            'perPage' => $distPerPage,
-            'perPageOptions' => $distPerPageOptions,
-        ],
-        'footer' => $distFooter,
-    ]) ?>
+        <section class="card batch-card" aria-label="All distributions" data-distribution-management-root>
+        <div class="card-body">
+            <h2 class="batch-pane-title">Distribution Log</h2>
+            <?= view('Admin/distribution-distributions-body', [
+                'distributions' => $distributions ?? [],
+                'keyword' => $distKeyword,
+                'perPage' => $distPerPage,
+                'perPageOptions' => $distPerPageOptions,
+            ]) ?>
+            <?php if ($distFooter !== null): ?>
+                <div class="mt-3 small text-muted">
+                    <?= $distFooter ?>
+                </div>
+            <?php endif; ?>
+        </div>
+    </section>
 <?php endif; ?>

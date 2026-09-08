@@ -86,7 +86,7 @@ foreach ($auditActionOptions as $action) {
     ]],
 ]) ?>
 <?php
-$auditFooter = $totalRows > 0 ? view('components/table_footer', [
+$auditFooter = $totalRows >= 0 ? view('components/table_footer', [
     'fromRecord' => $fromRecord,
     'toRecord' => $toRecord,
     'totalRows' => $totalRows,
@@ -95,22 +95,26 @@ $auditFooter = $totalRows > 0 ? view('components/table_footer', [
     'pageUrl' => $auditPageUrl,
 ]) : null;
 ?>
-<?= view('components/card', [
-    'icon' => 'clock-history',
-    'title' => 'Audit Trails',
-    'attrs' => 'aria-label="Audit trails" data-audit-management-root',
-    'cardClass' => 'audit-trails',
-    'bodyView' => 'Admin/audit-trails-body',
-    'bodyData' => [
-        'listRoute' => $listRoute,
-        'searchTerm' => $searchTerm,
-        'auditAction' => $auditAction,
-        'auditActionOptions' => $auditActionOptions,
-        'perPage' => $perPage,
-        'perPageOptions' => $perPageOptions,
-        'recentAudits' => $recentAudits,
-        'hasSearchFilters' => $hasSearchFilters,
-        'auditClearUrl' => $auditClearUrl,
-    ],
-    'footer' => $auditFooter,
-]) ?>
+
+<section class="card batch-card audit-trails" aria-label="Audit trails" data-audit-management-root>
+    <div class="card-body">
+        <h2 class="batch-pane-title">Audit Trails</h2>
+        <?= view('Admin/audit-trails-body', [
+            'listRoute' => $listRoute,
+            'searchTerm' => $searchTerm,
+            'auditAction' => $auditAction,
+            'auditActionOptions' => $auditActionOptions,
+            'perPage' => $perPage,
+            'perPageOptions' => $perPageOptions,
+            'recentAudits' => $recentAudits,
+            'hasSearchFilters' => $hasSearchFilters,
+            'auditClearUrl' => $auditClearUrl,
+        ]) ?>
+        <?php if ($auditFooter !== null): ?>
+            <div class="mt-3 small text-muted">
+                <?= $auditFooter ?>
+            </div>
+        <?php endif; ?>
+    </div>
+</section>
+

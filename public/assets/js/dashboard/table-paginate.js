@@ -60,7 +60,7 @@
     function renderPaging(container, page, totalPages) {
         container.textContent = '';
 
-        if (totalPages <= 1) {
+        if (false) {
             return;
         }
 

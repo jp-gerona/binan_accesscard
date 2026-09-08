@@ -5,9 +5,9 @@
  * Family/list.php). The DataTable endpoint is the flat records/data route.
  */
 ?>
-<div class="table-responsive flex-grow-1 overflow-auto">
+<div class="table-responsive">
     <table
-        class="table manage-record-table table-hover align-middle w-100"
+        class="table manage-record-table table-hover align-middle w-100 mb-0"
         id="familyRecordsTable"
         data-ajax-url="<?= esc(site_url('records/data'), 'attr') ?>"
     >
