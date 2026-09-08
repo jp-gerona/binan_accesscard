@@ -23,7 +23,7 @@ final class ImportReviewQuery
         public readonly int $page,
         public readonly int $per,
         public readonly string $severity,
-        public readonly string $code,
+        public readonly array $code,
         public readonly string $q,
     ) {
     }
@@ -32,6 +32,10 @@ final class ImportReviewQuery
     public static function fromArray(array $query): self
     {
         $per = (int) ($query['per'] ?? 0);
+        $code = $query['code'] ?? [];
+        if (is_string($code)) {
+            $code = array_filter(array_map('trim', explode(',', $code)));
+        }
 
         return new self(
             max(1, (int) ($query['page'] ?? 1)),
@@ -39,7 +43,7 @@ final class ImportReviewQuery
             in_array((string) ($query['severity'] ?? ''), self::SEVERITIES, true)
                 ? (string) $query['severity']
                 : 'all',
-            trim((string) ($query['code'] ?? '')),
+            array_filter(array_map('strval', (array) $code)),
             trim((string) ($query['q'] ?? '')),
         );
     }

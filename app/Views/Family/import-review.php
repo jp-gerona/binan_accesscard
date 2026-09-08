@@ -70,21 +70,52 @@ $fieldOptionsJson = json_encode($fieldOptions, JSON_HEX_TAG | JSON_HEX_AMP | JSO
         </button></li>
     </ul>
 
-    <?php /* House list-surface shell (components/card), matching Manage Records and
-             the other converted list pages, in place of a hand-written card. The
-             severity tabs above stay outside the card, same as a toolbar does on
-             those pages; the search input, filters and table markup are unchanged,
-             just relocated into Family/import-review-table as the card's body. */ ?>
-    <?= view('components/card', [
-        'icon' => 'table',
-        'title' => 'Rows to review',
-        'bodyView' => 'Family/import-review-table',
-        'bodyData' => ['summary' => $summary],
-        'footer' => '<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 w-100">'
-            . '<span id="importReviewCount" role="status" aria-live="polite"></span>'
-            . '<nav aria-label="Review pages"><ul class="pagination pagination-sm mb-0" id="importReviewPager"></ul></nav>'
-            . '</div>',
+    <?php
+    $problemOptions = [];
+    foreach (($summary['codes'] ?? []) as $code) {
+        $problemOptions[] = ['value' => $code['code'], 'label' => $code['label'], 'pill' => $code['label']];
+    }
+    ?>
+    <?= view('components/toolbar', [
+        'formId' => 'importReviewDatabaseSearchForm',
+        'disableGenericFilterJs' => false,
+        'isClient' => true,
+        'formAria' => 'Import review search and filters',
+        'searchPlaceholder' => 'Search this import...',
+        'searchName' => 'q',
+        'searchAttrs' => 'id="importReviewDatabaseSearch"',
+        'pillsId' => 'importReviewFilterPills',
+        'filterGroups' => [
+            [
+                'name' => 'code[]',
+                'label' => 'Problem',
+                'type' => 'checkbox',
+                'scroll' => true,
+                'options' => $problemOptions,
+            ]
+        ],
     ]) ?>
+
+    <?php /* House list-surface shell (batch-card), matching Reference Data's
+             ui-ux. The severity tabs above stay outside the card, same as a toolbar
+             does on those pages; the search input, filters and table markup are unchanged,
+             just relocated into Family/import-review-table as the card's body. */ ?>
+    <section class="card batch-card import-review-card" data-import-review-root>
+        <div class="card-body">
+            <h2 class="batch-pane-title">Rows to review</h2>
+            <?= view('Family/import-review-table', ['summary' => $summary]) ?>
+            <div class="mt-3 small text-muted">
+                <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 w-100">
+                    <div class="table-footer-left">
+                        <span id="importReviewCount" role="status" aria-live="polite"></span>
+                    </div>
+                    <div class="table-footer-right">
+                        <ul class="pagination pagination-sm m-0" id="importReviewPager"></ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
 
     <div class="fixed-bottom bg-white border-top p-3 shadow-sm d-flex flex-wrap justify-content-end align-items-center gap-2">
         <span id="importReviewStatus" class="text-muted me-auto" role="status" aria-live="polite"></span>

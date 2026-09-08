@@ -535,8 +535,11 @@ class ImportReviewPresenter
             return false;
         }
 
-        if ($query->code !== '' && ! in_array($query->code, array_column($row['issues'], 'code'), true)) {
-            return false;
+        if ($query->code !== []) {
+            $rowCodes = array_column($row['issues'], 'code');
+            if (empty(array_intersect($query->code, $rowCodes))) {
+                return false;
+            }
         }
 
         if ($query->q === '') {

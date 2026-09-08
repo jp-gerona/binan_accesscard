@@ -29,9 +29,9 @@
     var applyUrl     = root.dataset.applyUrl;
     var resolveDuplicateUrl = root.dataset.resolveDuplicateUrl;
     var restoreUrl   = root.dataset.restoreUrl;
-    var searchEl     = document.getElementById('importReviewSearch');
+    var databaseSearchEl = document.getElementById('importReviewDatabaseSearch');
+    var filterForm   = document.getElementById('importReviewDatabaseSearchForm');
     var perPageEl    = document.getElementById('importReviewPerPage');
-    var codeFilterEl = document.getElementById('importReviewCodeFilter');
     var pagerEl      = document.getElementById('importReviewPager');
 
     var table      = document.getElementById('importReviewTable');
@@ -51,7 +51,7 @@
         page: 1,
         per: 25,
         severity: 'all',
-        code: '',
+        code: [],
         q: '',
         total: 0,
         filtered: 0
@@ -241,7 +241,7 @@
         tr.appendChild(statusCell(row));
         tr.appendChild(el('td', 'font-monospace text-nowrap', String(row.sheetRow)));
         tr.appendChild(el('td', 'text-nowrap', row.qr || ''));
-        tr.appendChild(el('td', null, row.role || ''));
+        tr.appendChild(el('td', 'text-uppercase', row.role || ''));
         tr.appendChild(el('td', null, (row.values || {}).lastname || ''));
         tr.appendChild(el('td', 'text-nowrap', (row.values || {}).firstname || ''));
         tr.appendChild(el('td', null, (row.values || {}).middlename || ''));
@@ -636,37 +636,69 @@
             : '';
     }
 
-    // Keeps the Problem dropdown honest after an Apply: a code fixed out of the file
-    // is dropped from the list, a newly introduced one is offered. The current
-    // selection is kept if that code still exists, otherwise the filter resets to All.
+    // Keeps the Problem dropdown honest after an Apply
     function updateCodeFilter(codes) {
         if (!codes) {
             return;
         }
 
-        var current = codeFilterEl.value;
-        var stillPresent = false;
+        var current = state.code || [];
+        var codeGroup = filterForm ? filterForm.querySelector('[data-records-filter="code"]') : null;
 
-        codeFilterEl.innerHTML = '';
+        if (!codeGroup) return;
 
-        var allOption = document.createElement('option');
-        allOption.value = '';
-        allOption.textContent = 'All problems';
-        codeFilterEl.appendChild(allOption);
+        var listContainer = codeGroup.querySelector('.records-filter-list');
+        if (!listContainer) {
+            listContainer = document.createElement('div');
+            listContainer.className = 'records-filter-list overflow-auto';
+            codeGroup.appendChild(listContainer);
+        } else {
+            listContainer.innerHTML = '';
+        }
+
+        function createOption(val, label, isDefault) {
+            var lbl = document.createElement('label');
+            lbl.className = 'form-check d-flex align-items-center gap-2 py-1';
+            lbl.dataset.recordsOption = '';
+            var inp = document.createElement('input');
+            inp.className = 'form-check-input m-0';
+            inp.type = 'checkbox';
+            inp.name = 'code[]';
+            inp.value = val;
+            if (!isDefault) inp.dataset.recordsPillLabel = label;
+            if (isDefault) inp.dataset.recordsDefault = '';
+            lbl.appendChild(inp);
+            var span = document.createElement('span');
+            span.className = 'form-check-label text-wrap small';
+            span.textContent = label;
+            lbl.appendChild(span);
+            return lbl;
+        }
 
         codes.forEach(function (code) {
-            var option = document.createElement('option');
-            option.value = code.code;
-            option.textContent = code.label;
-            codeFilterEl.appendChild(option);
+            listContainer.appendChild(createOption(code.code, code.label, false));
+        });
 
-            if (code.code === current) {
-                stillPresent = true;
+        var anyStillPresent = false;
+        current.forEach(function (val) {
+            var cb = listContainer.querySelector('input[value="' + val + '"]');
+            if (cb) {
+                cb.checked = true;
+                anyStillPresent = true;
             }
         });
 
-        codeFilterEl.value = stillPresent ? current : '';
-        state.code = codeFilterEl.value;
+        if (!anyStillPresent && current.length > 0) {
+            state.code = [];
+            if (filterForm) filterForm.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+
+        if (filterForm) {
+            filterForm.removeAttribute('data-records-filter-bound');
+            if (typeof window.initRecordsFilterPanel === 'function') {
+                window.initRecordsFilterPanel(filterForm);
+            }
+        }
     }
 
     // One panel at a time: two open editors on one screen invite applying the wrong row.
@@ -725,7 +757,8 @@
             return;
         }
 
-        pagerEl.appendChild(pageItem('Previous', state.page - 1, state.page === 1));
+        pagerEl.appendChild(pageItem('&laquo;', 1, state.page === 1));
+        pagerEl.appendChild(pageItem('&lsaquo;', state.page - 1, state.page === 1));
 
         var wanted = {};
         wanted[1] = true;
@@ -751,12 +784,14 @@
             previous = n;
         });
 
-        pagerEl.appendChild(pageItem('Next', state.page + 1, state.page === pages));
+        pagerEl.appendChild(pageItem('&rsaquo;', state.page + 1, state.page === pages));
+        pagerEl.appendChild(pageItem('&raquo;', pages, state.page === pages));
     }
 
     function pageItem(label, page, disabled, active) {
         var li = el('li', 'page-item' + (disabled ? ' disabled' : '') + (active ? ' active' : ''));
-        var a = el('a', 'page-link', label);
+        var a = el('a', 'page-link');
+        a.innerHTML = label;
         a.href = '#';
 
         if (!disabled) {
@@ -948,14 +983,16 @@
     // Debounced so typing does not fire a request per keystroke.
     var searchTimer = null;
 
-    searchEl.addEventListener('input', function () {
-        window.clearTimeout(searchTimer);
-        searchTimer = window.setTimeout(function () {
-            state.q = searchEl.value;
-            state.page = 1;
-            loadRows();
-        }, 250);
-    });
+    if (databaseSearchEl) {
+        databaseSearchEl.addEventListener('input', function () {
+            window.clearTimeout(searchTimer);
+            searchTimer = window.setTimeout(function () {
+                state.q = databaseSearchEl.value;
+                state.page = 1;
+                loadRows();
+            }, 250);
+        });
+    }
 
     perPageEl.addEventListener('change', function () {
         state.per = Number(perPageEl.value);
@@ -963,11 +1000,21 @@
         loadRows();
     });
 
-    codeFilterEl.addEventListener('change', function () {
-        state.code = codeFilterEl.value;
-        state.page = 1;
-        loadRows();
-    });
+    if (filterForm) {
+        filterForm.addEventListener('change', function () {
+            var codeInputs = filterForm.querySelectorAll('input[name="code[]"]:checked');
+            var codes = [];
+            codeInputs.forEach(function (inp) { codes.push(inp.value); });
+            
+            state.code = codes;
+            state.page = 1;
+            loadRows();
+        });
+
+        filterForm.addEventListener('submit', function (event) {
+            event.preventDefault();
+        });
+    }
 
     confirmBtn.addEventListener('click', confirmImport);
     cancelBtn.addEventListener('click', cancelImport);
