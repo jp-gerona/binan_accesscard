@@ -57,6 +57,14 @@ function Write-Log([string]$message) {
     Add-Content -Path $logFile -Value "[$stamp] $message" -Encoding utf8
 }
 
+# Enqueue a single media reconciliation run before draining the shared queue. The
+# producer's lock plus JobQueueModel::enqueueIfNoActive prevents overlapping
+# scheduler fires from stacking jobs; exit code is always successful here.
+$reconcileOutput = & $phpExe $spark 'media:queue-reconcile' 2>&1
+if ($reconcileOutput -and $reconcileOutput.Trim() -ne '') {
+    Write-Log $reconcileOutput.Trim()
+}
+
 # Run one or more drainers (each with its own lock inside PHP) and wait for them.
 $procs = @()
 $temps = @()

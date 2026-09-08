@@ -3,6 +3,7 @@
 namespace Config;
 
 use App\Jobs\FamilyImportJob;
+use App\Jobs\FamilyMediaReconcileJob;
 use CodeIgniter\Config\BaseConfig;
 
 /**
@@ -20,5 +21,6 @@ class Queue extends BaseConfig
     /** @var array<string, class-string<\App\Jobs\JobHandlerInterface>> */
     public array $handlers = [
         'family_import' => FamilyImportJob::class,
+        'media_reconcile' => FamilyMediaReconcileJob::class,
     ];
 }

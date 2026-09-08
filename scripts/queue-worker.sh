@@ -36,6 +36,15 @@ mkdir -p "$LOG_DIR"
 
 stamp() { date '+%Y-%m-%d %H:%M:%S'; }
 
+# Enqueue a single media reconciliation run before draining the shared queue. The
+# producer's lock plus JobQueueModel::enqueueIfNoActive prevents overlapping
+# scheduler fires from stacking jobs; exit code is always successful here.
+reconcile_output="$("$PHP_BIN" "$PROJECT_DIR/spark" media:queue-reconcile 2>&1 || true)"
+
+if [ -n "${reconcile_output// }" ]; then
+    printf '[%s] %s\n' "$(stamp)" "$reconcile_output" >> "$LOG_FILE"
+fi
+
 # Drain once; capture output, prefix each line with a timestamp into the log.
 output="$("$PHP_BIN" "$PROJECT_DIR/spark" queue:work \
     --throttle="$THROTTLE" --max-seconds="$MAX_SECONDS" 2>&1 || true)"
