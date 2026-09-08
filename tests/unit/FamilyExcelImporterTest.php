@@ -564,6 +564,25 @@ final class FamilyExcelImporterTest extends CIUnitTestCase
         $this->assertSame([['rows' => [4, 5], 'qr' => '6001']], $result['duplicateGroups']);
     }
 
+    public function testDuplicateRowsTreatPeriodSuffixedJrAsTheSameSuffix(): void
+    {
+        // The classifier's key must be independently canonical: callers can supply
+        // staged rows whose equivalent suffixes differ only by a period.
+        $importer = $this->importer();
+        $method = (new ReflectionClass($importer))->getMethod('classifyDuplicateRows');
+        $method->setAccessible(true);
+
+        $jr = $this->memberRow(4, '6001', ['suffix' => 'JR']);
+        $jrWithPeriod = $this->memberRow(5, '6001', ['suffix' => 'JR.']);
+
+        $groups = $method->invoke($importer, ['6001' => [
+            ['row' => 4, 'data' => $jr['data']],
+            ['row' => 5, 'data' => $jrWithPeriod['data']],
+        ]]);
+
+        $this->assertSame([['rows' => [4, 5], 'qr' => '6001']], $groups);
+    }
+
     public function testDuplicateRowsGroupAllThreeCopies(): void
     {
         $result = $this->importer()->validateAndBuild([
@@ -592,6 +611,20 @@ final class FamilyExcelImporterTest extends CIUnitTestCase
             $this->memberRow(5, '6001', ['firstname' => '']),
         ]);
         $this->assertSame([], $blankFirstName['duplicateGroups']);
+
+        $blankLastName = $this->importer()->validateAndBuild([
+            $this->headRow(3, '6001'),
+            $this->memberRow(4, '6001'),
+            $this->memberRow(5, '6001', ['lastname' => '']),
+        ]);
+        $this->assertSame([], $blankLastName['duplicateGroups']);
+
+        $blankBirthday = $this->importer()->validateAndBuild([
+            $this->headRow(3, '6001'),
+            $this->memberRow(4, '6001'),
+            $this->memberRow(5, '6001', ['birthday' => '']),
+        ]);
+        $this->assertSame([], $blankBirthday['duplicateGroups']);
     }
 
     public function testDuplicateQrFamiliesAreBlockingOnBothSeparateHeadBlocks(): void
