@@ -549,36 +549,94 @@ final class FamilyExcelImporterTest extends CIUnitTestCase
         $this->assertSame('firstname', $length[0]['field']);
     }
 
-    public function testDuplicatePersonWarnsOnlyAtTheSameAddress(): void
+    public function testDuplicateRowsAreBlockingAndReturnedAsAGroup(): void
     {
-        // Same person twice in one family (shared head address) → warning.
-        $dup = $this->importer()->validateAndBuild([
-            $this->headRow(3, '6001'),
-            $this->memberRow(4, '6001', ['firstname' => 'Jose', 'lastname' => 'Cruz', 'birthday' => '01-10-2010']),
-            $this->memberRow(5, '6001', ['firstname' => 'Jose', 'lastname' => 'Cruz', 'birthday' => '01-10-2010']),
-        ]);
-        $this->assertContains('DUP-PERSON', $this->codes($dup));
-
-        // Same-named heads in two families at DIFFERENT addresses → not flagged.
-        $notDup = $this->importer()->validateAndBuild([
-            $this->headRow(3, '6002', ['firstname' => 'Juan', 'lastname' => 'Reyes', 'barangay' => 'Poblacion']),
-            $this->headRow(4, '6003', ['firstname' => 'Juan', 'lastname' => 'Reyes', 'barangay' => 'Malaban']),
-        ]);
-        $this->assertNotContains('DUP-PERSON', $this->codes($notDup));
-    }
-
-    public function testDuplicatePersonMatchesAcrossBirthdayFormats(): void
-    {
-        // The same child typed twice, once with a slash date and once zero-padded:
-        // one person, so DUP-PERSON must fire. The key uses the parsed date, not
-        // the raw cell text.
         $result = $this->importer()->validateAndBuild([
             $this->headRow(3, '6001'),
-            $this->memberRow(4, '6001', ['firstname' => 'Jose', 'lastname' => 'Dela Cruz', 'birthday' => '1/10/2012']),
-            $this->memberRow(5, '6001', ['firstname' => 'Jose', 'lastname' => 'Dela Cruz', 'birthday' => '01-10-2012']),
+            $this->memberRow(4, '6001', ['firstname' => 'JOSE', 'birthday' => '01-10-2012']),
+            $this->memberRow(5, '6001', ['firstname' => 'JOSE', 'birthday' => '01-10-2012']),
         ]);
 
-        $this->assertContains('DUP-PERSON', $this->codes($result));
+        $duplicates = $this->errorsFor($result, 'DUP-ROW');
+        $this->assertCount(2, $duplicates);
+        $this->assertSame([4, 5], array_column($duplicates, 'sheetRow'));
+        $this->assertSame(['blocking', 'blocking'], array_column($duplicates, 'severity'));
+        $this->assertSame([['rows' => [4, 5], 'qr' => '6001']], $result['duplicateGroups']);
+    }
+
+    public function testDuplicateRowsGroupAllThreeCopies(): void
+    {
+        $result = $this->importer()->validateAndBuild([
+            $this->headRow(3, '6001'),
+            $this->memberRow(4, '6001'),
+            $this->memberRow(5, '6001'),
+            $this->memberRow(6, '6001'),
+        ]);
+
+        $this->assertSame([['rows' => [4, 5, 6], 'qr' => '6001']], $result['duplicateGroups']);
+        $this->assertSame([4, 5, 6], array_column($this->errorsFor($result, 'DUP-ROW'), 'sheetRow'));
+    }
+
+    public function testDuplicateRowsRequireTheSameRelationshipAndCompleteIdentity(): void
+    {
+        $differentRelationship = $this->importer()->validateAndBuild([
+            $this->headRow(3, '6001'),
+            $this->memberRow(4, '6001'),
+            $this->memberRow(5, '6001', ['relationship' => 'SPOUSE']),
+        ]);
+        $this->assertSame([], $differentRelationship['duplicateGroups']);
+
+        $blankFirstName = $this->importer()->validateAndBuild([
+            $this->headRow(3, '6001'),
+            $this->memberRow(4, '6001'),
+            $this->memberRow(5, '6001', ['firstname' => '']),
+        ]);
+        $this->assertSame([], $blankFirstName['duplicateGroups']);
+    }
+
+    public function testDuplicateQrFamiliesAreBlockingOnBothSeparateHeadBlocks(): void
+    {
+        $result = $this->importer()->validateAndBuild([
+            $this->headRow(3, '6001', ['firstname' => 'JUAN']),
+            $this->headRow(4, '6002'),
+            $this->headRow(5, '6001', ['firstname' => 'PEDRO']),
+        ]);
+
+        $conflicts = $this->errorsFor($result, 'DUP-QR-FAMILY');
+        $this->assertCount(2, $conflicts);
+        $this->assertSame([3, 5], array_column($conflicts, 'sheetRow'));
+        $this->assertSame(['blocking', 'blocking'], array_column($conflicts, 'severity'));
+        $this->assertSame([], $result['duplicateGroups']);
+        $this->assertNotContains('HEAD-MULTI', $this->codes($result));
+        $this->assertNotContains('QR-CONTIG', $this->codes($result));
+    }
+
+    public function testContiguityWarningAllowsASeparatedSameHeadContinuation(): void
+    {
+        $result = $this->importer()->validateAndBuild([
+            $this->headRow(3, '6001'),
+            $this->headRow(4, '6002'),
+            $this->headRow(5, '6001'),
+        ]);
+
+        $this->assertSame(['QR-CONTIG'], array_values(array_filter(
+            $this->codes($result),
+            static fn (string $code): bool => in_array($code, ['QR-CONTIG', 'DUP-QR-FAMILY', 'HEAD-MULTI'], true),
+        )));
+        $this->assertSame('warning', $this->errorsFor($result, 'QR-CONTIG')[0]['severity']);
+    }
+
+    public function testTwoHeadsInOneContiguousBlockAreOnlyHeadMulti(): void
+    {
+        $result = $this->importer()->validateAndBuild([
+            $this->headRow(3, '6001'),
+            $this->headRow(4, '6001', ['firstname' => 'PEDRO']),
+        ]);
+
+        $this->assertSame(['HEAD-MULTI'], array_values(array_filter(
+            $this->codes($result),
+            static fn (string $code): bool => in_array($code, ['QR-CONTIG', 'DUP-QR-FAMILY', 'HEAD-MULTI'], true),
+        )));
     }
 
     // -- head-less family: use the address to find the likely Head --------------

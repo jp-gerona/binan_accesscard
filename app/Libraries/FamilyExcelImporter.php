@@ -93,9 +93,8 @@ class FamilyExcelImporter
      */
     private array $existingPeople = [];
 
-    /** [sheet row => family QR] for every grouped row, so contiguity can tell a
-     * blank gap (no owner) from another family's rows sitting in between. */
-    private array $rowOwner = [];
+    /** @var list<array{rows:list<int>,qr:string}> Exact in-file duplicate row candidates. */
+    private array $duplicateGroups = [];
 
     private int $memberCount = 0;
 
@@ -142,6 +141,7 @@ class FamilyExcelImporter
                 'errors'     => $parsed['errors'],
                 'fileErrors' => $parsed['errors'],
                 'families'   => [],
+                'duplicateGroups' => [],
                 'counts'     => $this->summarize([], $parsed['errors']),
             ];
         }
@@ -160,6 +160,7 @@ class FamilyExcelImporter
             'columns'    => $parsed['columns'] ?? [],
             'families'   => $built['families'],
             'appends'    => $built['appends'],
+            'duplicateGroups' => $built['duplicateGroups'],
             'counts'     => $this->summarize($built['families'], $errors, $built['appends']),
         ];
     }
@@ -255,7 +256,7 @@ class FamilyExcelImporter
         $this->appends        = [];
         $this->existingHeads  = $existingHeads;
         $this->existingPeople = $existingPeople;
-        $this->rowOwner       = [];
+        $this->duplicateGroups = [];
         $this->memberCount    = 0;
         $this->rowCount       = 0;
         $this->groupCount     = 0;
@@ -266,8 +267,13 @@ class FamilyExcelImporter
         $incomeByLabel = $this->incomeLabelMap();
 
         // STAGE 3-4: validate + normalise each QR, then group. A row whose QR cannot be
-        // validated is reported and left ungrouped (it has no usable family key).
+        // validated is reported and left ungrouped (it has no usable family key). Blocks
+        // retain the order in which populated QR runs occur; global groups alone cannot
+        // distinguish a second family from a separated continuation.
         $groups = [];
+        $blocksByQr = [];
+        $previousQr = null;
+        $blockIndex = null;
 
         foreach ($rows as $entry) {
             $sheetRow = (int) $entry['sheetRow'];
@@ -285,28 +291,39 @@ class FamilyExcelImporter
 
             if (! $qr['ok']) {
                 $this->addError($sheetRow, (string) ($data['familyno'] ?? ''), $qr['code'], 'familyno', $qr['msg']);
+                // A populated row with no usable QR interrupts a QR block.
+                $previousQr = null;
+                $blockIndex = null;
                 continue;
             }
 
-            $groups[$qr['qr']][] = ['row' => $sheetRow, 'data' => $data];
+            $familyNo = (string) $qr['qr'];
+            $familyRow = ['row' => $sheetRow, 'data' => $data];
+            $groups[$familyNo][] = $familyRow;
+
+            if ($previousQr !== $familyNo) {
+                $blocksByQr[$familyNo][] = [];
+                $blockIndex = array_key_last($blocksByQr[$familyNo]);
+            }
+
+            $blocksByQr[$familyNo][$blockIndex][] = $familyRow;
+            $previousQr = $familyNo;
         }
 
         $this->groupCount = count($groups);
 
-        // The owner map must be complete before ANY family is processed: the first
-        // family's contiguity check has to see families that come later in the loop.
         foreach ($groups as $familyNo => $familyRows) {
-            foreach ($familyRows as $familyRow) {
-                $this->rowOwner[(int) $familyRow['row']] = (int) $familyNo;
-            }
+            $this->processFamily(
+                (string) $familyNo,
+                $familyRows,
+                $blocksByQr[(string) $familyNo],
+                $sectorByCode,
+                $serviceByCode,
+                $incomeByLabel,
+            );
         }
 
-        foreach ($groups as $familyNo => $familyRows) {
-            $this->processFamily((string) $familyNo, $familyRows, $sectorByCode, $serviceByCode, $incomeByLabel);
-        }
-
-        // Cross-row pass: flag rows that look like the same person (name+birthday+address).
-        $this->checkDuplicatePersons($groups);
+        $this->duplicateGroups = $this->classifyDuplicateRows($groups);
         // Same idea against the DB: people this batch is re-entering under a different QR.
         $this->checkExistingPeople($groups);
 
@@ -314,6 +331,7 @@ class FamilyExcelImporter
             'families' => $this->families,
             'errors'   => $this->errors,
             'appends'  => $this->appends,
+            'duplicateGroups' => $this->duplicateGroups,
             'counts'   => $this->summarize($this->families, $this->errors, $this->appends),
         ];
     }
@@ -849,11 +867,12 @@ class FamilyExcelImporter
      * persist-ready; field errors on it still block the import via the reviewer's gate.
      *
      * @param list<array{row: int, data: array<string, string>}> $rows
+     * @param list<list<array{row: int, data: array<string, string>}>> $blocks
      * @param array<string, int>    $sectorByCode
      * @param array<string, int>    $serviceByCode
      * @param array<string, string> $incomeByLabel
      */
-    private function processFamily(string $familyNo, array $rows, array $sectorByCode, array $serviceByCode, array $incomeByLabel): void
+    private function processFamily(string $familyNo, array $rows, array $blocks, array $sectorByCode, array $serviceByCode, array $incomeByLabel): void
     {
         $heads   = [];
         $members = [];
@@ -872,7 +891,7 @@ class FamilyExcelImporter
 
         // Family-level coherence (does not early-return - fields are still validated).
         $this->checkFingerprint($familyNo, $rows);
-        $this->checkContiguity($familyNo, $rows);
+        $blockIssue = $this->checkQrBlocks($familyNo, $blocks);
 
         // A headless group whose QR already belongs to a family = members being ADDED to
         // that existing family (the worker's forgotten-member-next-batch case). Instead of
@@ -883,13 +902,10 @@ class FamilyExcelImporter
             return;
         }
 
-        if (count($heads) !== 1) {
+        if (count($heads) === 0 || $blockIssue) {
             if (count($heads) === 0) {
                 [$anchorRow, $message] = $this->headlessDiagnosis($familyNo, $rows);
                 $this->addError($anchorRow, $familyNo, 'HEAD-NONE', 'relationship', $message);
-            } else {
-                $this->addError($heads[1]['row'], $familyNo, 'HEAD-MULTI', 'relationship',
-                    'Family ' . $familyNo . ' has more than one Head row. Only one person can be the Head.');
             }
 
             // Aggregate: still validate every row's fields so those errors surface now.
@@ -1043,35 +1059,77 @@ class FamilyExcelImporter
     }
 
     /**
-     * QR-30: a family's rows should sit next to each other. Judged against populated rows
-     * only (see rowOwner): blank rows and empty gaps are not a break, only another
-     * family's rows interleaved between them are. Warning only - the family still imports.
+     * Distinguishes a separate household sharing a QR from a harmless separated
+     * continuation. A multiple-head error is local to one contiguous block; heads in
+     * different blocks only conflict when every block has one and their identities differ.
      *
-     * @param list<array{row: int, data: array<string, string>}> $rows
+     * @param list<list<array{row: int, data: array<string, string>}>> $blocks
      */
-    private function checkContiguity(string $familyNo, array $rows): void
+    private function checkQrBlocks(string $familyNo, array $blocks): bool
     {
-        if (count($rows) < 2) {
-            return;
-        }
+        $hasBlockingIssue = false;
+        $singleHeads = [];
 
-        $nums = array_map(static fn (array $entry): int => (int) $entry['row'], $rows);
-        $min  = min($nums);
-        $max  = max($nums);
+        foreach ($blocks as $block) {
+            $heads = array_values(array_filter($block, static fn (array $entry): bool =>
+                strcasecmp(trim((string) ($entry['data']['relationship'] ?? '')), 'Head') === 0
+            ));
 
-        // Only a row belonging to a DIFFERENT family sitting between this family's
-        // rows is a break. Blank rows inside the span were skipped at read time and
-        // carry no owner, and a gap with nothing in it at all is not interleaving.
-        for ($row = $min + 1; $row < $max; $row++) {
-            $owner = $this->rowOwner[$row] ?? null;
+            if (count($heads) > 1) {
+                $this->addError($heads[1]['row'], $familyNo, 'HEAD-MULTI', 'relationship',
+                    'Family ' . $familyNo . ' has more than one Head in the same contiguous family block. Only one person can be the Head.');
+                $hasBlockingIssue = true;
+            }
 
-            if ($owner !== null && $owner !== (int) $familyNo) {
-                $this->addError($min, $familyNo, 'QR-CONTIG', null,
-                    'Family ' . $familyNo . ' rows are not next to each other. This can happen after sorting or pasting - check the grouping.', 'warning');
-
-                return;
+            if (count($heads) === 1) {
+                $singleHeads[] = ['head' => $heads[0], 'block' => $block];
             }
         }
+
+        if (count($blocks) < 2) {
+            return $hasBlockingIssue;
+        }
+
+        // A different-family conflict is provable only when every separated block has
+        // exactly one head. A headless block can be a continuation of the preceding one.
+        if (count($singleHeads) === count($blocks)) {
+            $identities = [];
+
+            foreach ($singleHeads as $item) {
+                $data = $item['head']['data'];
+                $identities[] = implode('|', [
+                    $this->normalizeText((string) ($data['firstname'] ?? '')),
+                    $this->normalizeText((string) ($data['lastname'] ?? '')),
+                    (string) $this->normalizeBirthday((string) ($data['birthday'] ?? '')),
+                ]);
+            }
+
+            if (count(array_unique($identities)) > 1) {
+                $descriptions = [];
+
+                foreach ($singleHeads as $item) {
+                    $block = $item['block'];
+                    $range = (int) $block[0]['row'] . '-' . (int) $block[array_key_last($block)]['row'];
+                    $name = $this->personName($item['head']['data']) ?: 'an unnamed Head';
+                    $descriptions[] = 'rows ' . $range . ' (headed by ' . $name . ')';
+                }
+
+                foreach ($singleHeads as $item) {
+                    $this->addError((int) $item['head']['row'], $familyNo, 'DUP-QR-FAMILY', 'familyno',
+                        'QR ' . $familyNo . ' is used by separate family blocks: ' . implode(' and ', $descriptions)
+                        . '. Give each family its own QR Number.');
+                }
+
+                return true;
+            }
+        }
+
+        // Blank rows do not split blocks; reaching here means another populated QR block
+        // did. It is safe only because the blocks did not prove different families.
+        $this->addError((int) $blocks[0][0]['row'], $familyNo, 'QR-CONTIG', null,
+            'Family ' . $familyNo . ' rows are not next to each other. This can happen after sorting or pasting - check the grouping.', 'warning');
+
+        return $hasBlockingIssue;
     }
 
     /**
@@ -1698,72 +1756,62 @@ class FamilyExcelImporter
     }
 
     /**
-     * QR-31 refinement: warns when two rows look like the SAME person - identical first +
-     * middle + last + suffix + birthday AND the same household address (members inherit the
-     * head's). Never skipped or blocked, so a genuine coincidence still imports. Only runs
-     * per family with exactly one head (address is unambiguous there).
+     * Finds deterministic in-file duplicate rows. The full key deliberately includes the
+     * relationship and household fields: a matching name and birthday alone is not proof
+     * that two people are copies. Groups never cross a QR number.
      *
      * @param array<int|string, list<array{row: int, data: array<string,string>}>> $groups
+     * @return list<array{rows:list<int>,qr:string}>
      */
-    private function checkDuplicatePersons(array $groups): void
+    private function classifyDuplicateRows(array $groups): array
     {
-        $byKey = [];
+        $duplicateGroups = [];
 
         foreach ($groups as $qr => $rows) {
-            $head = null;
-            $headCount = 0;
+            $byKey = [];
 
             foreach ($rows as $entry) {
-                if (strcasecmp(trim((string) ($entry['data']['relationship'] ?? '')), 'Head') === 0) {
-                    $head = $entry;
-                    $headCount++;
-                }
-            }
-
-            if ($headCount !== 1) {
-                continue;
-            }
-
-            $addressKey = $this->normalizeText((string) ($head['data']['address'] ?? ''))
-                . '|' . $this->normalizeText((string) ($head['data']['barangay'] ?? ''));
-
-            foreach ($rows as $entry) {
-                $data  = $entry['data'];
+                $data = $entry['data'];
                 $first = $this->normalizeText((string) ($data['firstname'] ?? ''));
-                $last  = $this->normalizeText((string) ($data['lastname'] ?? ''));
+                $last = $this->normalizeText((string) ($data['lastname'] ?? ''));
+                $birthday = $this->normalizeBirthday((string) ($data['birthday'] ?? ''));
 
-                // Blank names are already flagged REQUIRED; don't treat them as dup matches.
-                if ($first === '' || $last === '') {
+                // An incomplete identity cannot prove that rows are copies.
+                if ($first === '' || $last === '' || $birthday === null) {
                     continue;
                 }
 
-                $key = implode('|', [
+                $key = json_encode([
+                    $this->normalizeText((string) ($data['relationship'] ?? '')),
                     $first,
                     $this->normalizeText((string) ($data['middlename'] ?? '')),
                     $last,
-                    $this->normalizeText(str_replace('.', '', (string) ($data['suffix'] ?? ''))),
-                    (string) $this->normalizeBirthday((string) ($data['birthday'] ?? '')),
-                    $addressKey,
-                ]);
+                    $this->normalizeText((string) ($data['suffix'] ?? '')),
+                    $birthday,
+                    $this->normalizeText((string) ($data['address'] ?? '')),
+                    $this->normalizeText((string) ($data['barangay'] ?? '')),
+                ], JSON_THROW_ON_ERROR);
 
-                $byKey[$key][] = ['row' => (int) $entry['row'], 'qr' => (string) $qr];
+                $byKey[$key][] = (int) $entry['row'];
+            }
+
+            foreach ($byKey as $candidateRows) {
+                if (count($candidateRows) < 2) {
+                    continue;
+                }
+
+                $duplicateGroups[] = ['rows' => $candidateRows, 'qr' => (string) $qr];
+
+                foreach ($candidateRows as $row) {
+                    $others = array_values(array_filter($candidateRows, static fn (int $other): bool => $other !== $row));
+                    $this->addError($row, (string) $qr, 'DUP-ROW', null,
+                        'This is an exact duplicate of row(s) ' . implode(', ', $others)
+                        . '. Keep one complete row and discard the copies from this import.');
+                }
             }
         }
 
-        foreach ($byKey as $hits) {
-            if (count($hits) < 2) {
-                continue;
-            }
-
-            $allRows = array_map(static fn (array $h): int => $h['row'], $hits);
-
-            foreach ($hits as $hit) {
-                $others = array_values(array_filter($allRows, static fn (int $r): bool => $r !== $hit['row']));
-
-                $this->addError($hit['row'], $hit['qr'], 'DUP-PERSON', null,
-                    'Same person (name, birthday, and address) also on row(s) ' . implode(', ', $others) . '. Check this is not a duplicate.', 'warning');
-            }
-        }
+        return $duplicateGroups;
     }
 
     // -- lookups + helpers -----------------------------------------------------
