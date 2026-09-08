@@ -1220,8 +1220,12 @@ class FamilyExcelImporter
             'religion'      => $religion,
             // The sheet's Barangay column resolves to barangayID below; it is no
             // longer appended to the address, which holds the street address only.
+            // The staged canonical address (uppercase, whitespace collapsed,
+            // punctuation preserved) is what the review shows, so it must also be
+            // what gets stored - re-cleaning here would strip punctuation the
+            // operator already reviewed and approved.
             'address'       => MemberFieldNormalizer::nullableText(
-                MemberFieldNormalizer::cleanAddress((string) ($data['address'] ?? ''))
+                (string) ($data['address'] ?? '')
             ),
             'barangayID'    => $this->barangayIdForHead((string) ($data['barangay'] ?? '')),
             'relationship'  => $isHead ? 'HEAD' : (MemberFieldNormalizer::nullableUpperText((string) ($data['relationship'] ?? '')) ?? 'MEMBER'),

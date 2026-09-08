@@ -328,6 +328,29 @@ final class FamilyExcelImporterTest extends CIUnitTestCase
         $this->assertNotSame($semicolon[0]['data']['address'], $semicolon[1]['data']['address']);
     }
 
+    public function testPayloadStoresStagedAddressVerbatim(): void
+    {
+        // Canonical staging preserves punctuation ("Purok  1;" -> "PUROK 1;"), so the
+        // review screen shows "PUROK 1;". The payload the write step stores must be
+        // that same staged value verbatim - a second cleaning pass here strips the
+        // punctuation the reviewer already saw and approved ("PUROK 1").
+        $result = $this->importer()->validateAndBuild([
+            $this->headRow(3, '6001', ['address' => 'Purok  1;']),
+        ]);
+
+        $this->assertSame('PUROK 1;', $result['families'][0]['headPayload']['address']);
+    }
+
+    public function testPayloadStoresStagedCommaAddressVerbatim(): void
+    {
+        // The comma case from the review spec: staged "PUROK 1," must store as-is.
+        $result = $this->importer()->validateAndBuild([
+            $this->headRow(3, '6001', ['address' => 'Purok  1,']),
+        ]);
+
+        $this->assertSame('PUROK 1,', $result['families'][0]['headPayload']['address']);
+    }
+
     public function testCanonicalRowsMapSuffixAliasesToEnumValues(): void
     {
         $rows = (new FamilyExcelImporter())->normalizeRows([
