@@ -94,6 +94,22 @@ final class FamilyMediaUploadTest extends CIUnitTestCase
         $this->assertStringContainsString('name="head_signature"', $html);
     }
 
+    public function testOptionalUploadWarningIsVisibleInTheRedirectedDashboardView(): void
+    {
+        $warning = 'The optional portrait photo could not be uploaded.';
+        session()->setFlashdata('warning', $warning);
+
+        $html = view('layout', [
+            'activePage' => 'records',
+            'role'       => 'encoder',
+            'bodyView'   => 'Family/profile-view',
+            'bodyData'   => [],
+        ]);
+
+        $this->assertStringContainsString('alert-warning', $html);
+        $this->assertStringContainsString($warning, $html);
+    }
+
     public function testCreateStoresJpegAndPngUnderCanonicalNames(): void
     {
         $photo = $this->imageUpload('jpg', [255, 0, 0]);

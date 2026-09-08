@@ -142,6 +142,12 @@ $bodyView = ($bodyView ?? '') !== '' ? $bodyView : 'Pages/dashboard';
                     <p class="reset-password-callout__hint">Share it with the user and ask them to change it in My Account.</p>
                 </div>
             <?php endif; ?>
+            <?php if (session()->getFlashdata('warning')): ?>
+                <div class="alert alert-warning alert-dismissible fade show" role="alert" data-auto-dismiss-alert>
+                    <?= esc(session()->getFlashdata('warning')) ?>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+            <?php endif; ?>
             <?php if (session()->getFlashdata('error')): ?>
                 <div class="alert alert-danger alert-dismissible fade show" role="alert" data-auto-dismiss-alert>
                     <?= esc(session()->getFlashdata('error')) ?>
