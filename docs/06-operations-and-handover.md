@@ -48,15 +48,23 @@ machine other people reach.
 
 ### Configure private family media
 
-Create a folder owned by the account that runs the scheduled worker. It must be
-outside the checkout, `public/`, and `writable/`; do not make it web-readable.
+Create a folder that both application accounts can reach. The web account that
+runs PHP writes uploads synchronously when a family is saved, and the scheduled
+worker account scans the same folder, so a deployment that splits the two across
+separate accounts needs a shared group with group-write on the directory and
+stored files made group-readable. Running both processes under one account is
+simpler and also works.
+
 For a Linux deployment whose worker account is `binan-worker` and whose PHP
-account is `www-data`, give the PHP account read-only group access:
+account is `www-data`, put both accounts in a shared `binan-media` group and make
+the directory group-owned and group-writable with the setgid bit, so files the
+web account creates inherit the shared group:
 
 ```bash
 sudo groupadd --system binan-media
+sudo usermod -a -G binan-media binan-worker
 sudo usermod -a -G binan-media www-data
-sudo install -d -o binan-worker -g binan-media -m 0750 /var/lib/binan-accesscard-media
+sudo install -d -o binan-worker -g binan-media -m 2770 /var/lib/binan-accesscard-media
 ```
 
 Set the corresponding `.env` value, using an absolute local path:
@@ -66,12 +74,12 @@ familymediasettings.root = '/var/lib/binan-accesscard-media'
 ```
 
 This handbook calls that configured folder `MEDIA_ROOT` in shell commands; it is
-not a second application setting. The PHP account needs read-only access because
-the protected application route streams linked files through the storage
-boundary. It must not receive write access. The scheduled worker account needs
-read and write access so it can inspect arrivals and process uploads. Restart the
-PHP service after changing group membership, then install the worker at its
-default one-minute schedule as described in chapter 05.
+not a second application setting. The storage boundary writes uploaded files at
+group-readable `0640`, and the setgid directory above keeps their group set to
+`binan-media`, so the worker account can read what the web account saved. Keep
+the folder outside anything the web server serves directly. Restart the PHP
+service after changing group membership, then install the worker at its default
+one-minute schedule as described in chapter 05.
 
 The database account needs `SELECT`, `INSERT`, `UPDATE`, and `DELETE` on the
 `accesscard` database. It does not need `DROP`, and it does not need access to

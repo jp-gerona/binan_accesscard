@@ -7,6 +7,7 @@ use App\Models\Families\FamilyMediaModel;
 use CodeIgniter\HTTP\Files\UploadedFile;
 use CodeIgniter\Test\CIUnitTestCase;
 use Config\FamilyMediaSettings;
+use RuntimeException;
 
 /** @internal */
 final class FamilyMediaStorageTest extends CIUnitTestCase
@@ -180,6 +181,23 @@ final class FamilyMediaStorageTest extends CIUnitTestCase
         @rmdir($this->root . DIRECTORY_SEPARATOR . 'subdir');
     }
 
+    public function testCandidateFilenamesThrowsWhenTheRootCannotBeListed(): void
+    {
+        chmod($this->root, 0000);
+
+        try {
+            if (@scandir($this->root) !== false) {
+                $this->markTestSkipped('The current PHP user can read chmod 0000 directories.');
+            }
+
+            $this->assertNotNull($this->storage->root());
+            $this->expectException(RuntimeException::class);
+            $this->storage->candidateFilenames();
+        } finally {
+            chmod($this->root, 0700);
+        }
+    }
+
     public function testMetadataReportsTheSameCheapStatInspectionUsesAndRejectsGoneOrNonCanonicalFiles(): void
     {
         $path = $this->writeJpeg('019186.photo.jpg', 100, 100);
@@ -237,6 +255,26 @@ final class FamilyMediaStorageTest extends CIUnitTestCase
         $this->assertFileExists($upload);
         $this->assertSame([], glob($this->root . DIRECTORY_SEPARATOR . '.*.tmp-*'));
         @unlink($upload);
+    }
+
+    public function testStoredUploadIsLeftGroupReadableSoAWorkerInTheSharedGroupCanReadIt(): void
+    {
+        $upload = tempnam(sys_get_temp_dir(), 'family-media-upload-');
+        $this->writeJpegAt($upload, 100, 100, [0, 0, 255]);
+        $destination = $this->root . DIRECTORY_SEPARATOR . '019195.photo.jpg';
+
+        try {
+            $this->storage->storeUpload(
+                new LocalUploadedFile($upload, 'ignored.jpg'),
+                19195,
+                FamilyMediaModel::KIND_PHOTO,
+            );
+
+            $this->assertFileExists($destination);
+            $this->assertSame(0640, fileperms($destination) & 0777);
+        } finally {
+            @unlink($upload);
+        }
     }
 
     public function testItRejectsEmptyAndErroredUploads(): void

@@ -121,6 +121,73 @@ final class FamilyMediaReconcilerTest extends CIUnitTestCase
         $this->assertSame('019194.photo.jpg', $all[0]['source_filename']);
     }
 
+    public function testAListingFailureThrowsAndNeverMarksLinkedRowsMissing(): void
+    {
+        $headId = $this->seedHeadWithControl(19194);
+        $path = $this->writeJpeg('019194.photo.jpg', 100, 100);
+        $this->reconciler()->run($this->reporter());
+        $linked = $this->mediaModel->findBySourceFilename('019194.photo.jpg');
+
+        $this->assertSame(FamilyMediaModel::STATE_LINKED, $linked['state']);
+
+        chmod($this->root, 0000);
+
+        try {
+            if (@scandir($this->root) !== false) {
+                $this->markTestSkipped('The current PHP user can read chmod 0000 directories.');
+            }
+
+            $failed = false;
+
+            try {
+                $this->reconciler()->run($this->reporter());
+            } catch (RuntimeException $exception) {
+                $failed = true;
+            }
+
+            $this->assertTrue($failed, 'A folder whose listing fails must throw, never mark missing.');
+        } finally {
+            chmod($this->root, 0700);
+        }
+
+        $after = $this->mediaModel->findBySourceFilename('019194.photo.jpg');
+        $this->assertSame(FamilyMediaModel::STATE_LINKED, $after['state']);
+        $this->assertSame($headId, (int) $after['headID']);
+    }
+
+    public function testRestoredFileRelinksToTheOriginalHeadAfterItsControlMappingIsRetired(): void
+    {
+        $headId = $this->seedHeadWithControl(19195);
+        $path = $this->writeJpeg('019195.photo.jpg', 100, 100, [255, 0, 0]);
+        $this->reconciler()->run($this->reporter());
+
+        @unlink($path);
+        $this->reconciler()->run($this->reporter());
+        $row = $this->mediaModel->findBySourceFilename('019195.photo.jpg');
+
+        $this->assertSame(FamilyMediaModel::STATE_MISSING, $row['state']);
+        $this->assertSame($headId, (int) $row['headID']);
+
+        // Retire the control mapping the same way the existing retired-mapping test does.
+        db_connect()->table('qr_control')->where('control_no', 19195)->delete();
+
+        $this->writeJpeg('019195.photo.jpg', 100, 100, [0, 0, 255]);
+        touch($path, time() + 2);
+        $summary = $this->reconciler()->run($this->reporter());
+
+        $this->assertSame(1, $summary['linked']);
+        $this->assertSame(0, $summary['pending']);
+
+        $linked = $this->mediaModel->findLinked($headId, 'photo');
+        $this->assertNotNull($linked);
+        $this->assertSame('019195.photo.jpg', $linked['source_filename']);
+        $this->assertSame($headId, (int) $this->mediaModel->findBySourceFilename('019195.photo.jpg')['headID']);
+
+        // The head still has exactly one linked photo.
+        $all = $this->mediaModel->findLinkedForHead($headId);
+        $this->assertCount(1, $all);
+    }
+
     public function testUnconfiguredRootThrowsSoTheWorkerRecordsAFailure(): void
     {
         $settings = new FamilyMediaSettings();

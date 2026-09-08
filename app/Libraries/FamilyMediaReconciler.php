@@ -153,6 +153,29 @@ class FamilyMediaReconciler
             return;
         }
 
+        // A row marked missing keeps its headID so an already-linked file stays
+        // linked to its original head. When such a file reappears, re-link to the
+        // retained head before the current control lookup, which may no longer
+        // exist or may map the number elsewhere. The model link path re-validates
+        // that the member is still a head; when the head is gone, fall through to
+        // the control lookup exactly as an unknown file would.
+        if ($row !== null && (string) $row['state'] === FamilyMediaModel::STATE_MISSING
+            && (int) ($row['headID'] ?? 0) > 0) {
+            $retainedHeadId = (int) $row['headID'];
+
+            if ($this->media->link(
+                (int) ($row['mediaID'] ?? 0),
+                $retainedHeadId,
+                $this->urlFor($retainedHeadId, $kind),
+                $this->fingerprint($file),
+            )) {
+                $counts['linked']++;
+                $this->audit('MEDIA_ADDED', $retainedHeadId, $kind, $filename);
+
+                return;
+            }
+        }
+
         $headId = $this->qrControl->headForControl($controlNo);
 
         if ($headId === null) {

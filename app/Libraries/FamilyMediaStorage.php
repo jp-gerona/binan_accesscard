@@ -6,6 +6,7 @@ use App\Models\Families\FamilyMediaModel;
 use CodeIgniter\HTTP\Files\UploadedFile;
 use Config\FamilyMediaSettings;
 use InvalidArgumentException;
+use RuntimeException;
 
 /**
  * The fail-closed boundary around the office-managed, private family-media directory.
@@ -126,6 +127,11 @@ class FamilyMediaStorage
                 }
             }
 
+            // The upload is written by the web account but scanned by the worker
+            // account, so tempnam()'s private 0600 mode would leave the worker
+            // unable to read it. Group-read keeps a shared-group worker in play.
+            @chmod($destination, 0640);
+
             $stored = $this->inspect($filename);
 
             return $stored ?? [];
@@ -171,9 +177,12 @@ class FamilyMediaStorage
             return [];
         }
 
-        $filenames = scandir($this->root);
+        $filenames = @scandir($this->root);
         if ($filenames === false) {
-            return [];
+            // A transient directory read failure must fail the whole run so the
+            // worker records a retry. Silently returning an empty candidate list
+            // would make the reconciler mark every linked row missing.
+            throw new RuntimeException('The family media root cannot be listed: ' . $this->root);
         }
 
         $candidates = [];
