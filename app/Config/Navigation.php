@@ -80,6 +80,7 @@ class Navigation
         'records-profile'   => self::ALL_STAFF,
         'records-edit'      => ['Developer', 'Admin', 'Encoder'],
         'records-update'    => ['Developer', 'Admin', 'Encoder'],
+        'records-media'     => ['Developer', 'Admin', 'Encoder'],
         'dashboard-reports' => self::ALL_STAFF,
     ];
 
@@ -94,6 +95,7 @@ class Navigation
         'records-profile'   => 'Family Profile',
         'records-edit'      => 'Edit Family Record',
         'records-update'    => 'Edit Family Record',
+        'records-media'     => 'Family Media',
         'dashboard-reports' => 'Distribution Report',
     ];
 
@@ -110,6 +112,7 @@ class Navigation
         'records-profile' => 'records',
         'records-edit'    => 'records',
         'records-update'  => 'records',
+        'records-media'   => 'records',
         // Neither endpoint renders a breadcrumb (one returns JSON, the other
         // PDF bytes), but the manifest's invariant is that every unlisted key
         // names the page it hangs off, and the dashboard is where both are

@@ -14,6 +14,7 @@ use App\Libraries\RoleAccess;
 use App\Libraries\SectorIds;
 use App\Models\Audit\AuditTrailsModel;
 use App\Models\Families\FamilyFormOptionsModel;
+use App\Models\Families\FamilyMediaModel;
 use App\Models\Families\MemberModel;
 use App\Models\Families\MemberSectorModel;
 use App\Models\Families\MemberServiceModel;
@@ -261,6 +262,8 @@ class FamilyController extends BaseController
 
         helper('dashboard_view_helper');
 
+        $media = $this->familyMediaForProfile($role, $headId);
+
         return view('layout', DashboardPageBuilder::shellAccountData() + [
             'activePage' => 'records-profile',
             'role'       => $role,
@@ -270,8 +273,44 @@ class FamilyController extends BaseController
                 'head'    => $summary->head($context['head'], $context['controlNumber']),
                 'members' => $summary->members($context['members']),
                 'canEdit' => in_array($role, Navigation::pageRoles('records-edit'), true),
+                'media'   => $media,
             ]),
         ]);
+    }
+
+    /**
+     * The private media URLs for a record's read profile, or two nulls when the
+     * session's role may not view family media. URLs come from the linked
+     * registry rows (`media_url`) and stay relative; the view turns them into
+     * usable src attributes. Members who are not heads already have no linked
+     * rows, so a head-id check is implicit in the query.
+     *
+     * @return array{photo: ?string, signature: ?string}
+     */
+    private function familyMediaForProfile(string $role, int $headId): array
+    {
+        if (! in_array($role, Navigation::pageRoles('records-media'), true)) {
+            return ['photo' => null, 'signature' => null];
+        }
+
+        $media = new FamilyMediaModel();
+
+        return [
+            'photo'     => $this->linkedMediaUrl($media->findLinked($headId, FamilyMediaModel::KIND_PHOTO)),
+            'signature' => $this->linkedMediaUrl($media->findLinked($headId, FamilyMediaModel::KIND_SIGNATURE)),
+        ];
+    }
+
+    /** The private relative URL a linked media row stores, or null when blank. */
+    private function linkedMediaUrl(?array $row): ?string
+    {
+        if ($row === null) {
+            return null;
+        }
+
+        $url = trim((string) ($row['media_url'] ?? ''));
+
+        return $url === '' ? null : $url;
     }
 
     /**

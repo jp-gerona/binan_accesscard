@@ -218,20 +218,31 @@ if (! function_exists('family_record_view_data')) {
      * App\Libraries\FamilyRecordSummary, plus whether this session may reach the
      * separate edit page. Called by FamilyController::profile().
      *
+     * `media` carries the private relative media URLs for the record whenever the
+     * session's role may view them, else two nulls: the URL strings come straight
+     * from the registry row (`media_url`), never from a request or a guessed path.
+     *
      * @return array{
      *     canEdit: bool,
      *     head: array<string, mixed>,
      *     headId: int,
+     *     media: array{photo: ?string, signature: ?string},
      *     members: list<array<string, mixed>>
      * }
      */
     function family_record_view_data(array $data): array
     {
+        $media = (array) ($data['media'] ?? []);
+
         return [
             'headId'  => (int) ($data['headId'] ?? 0),
             'head'    => (array) ($data['head'] ?? []),
             'members' => array_values((array) ($data['members'] ?? [])),
             'canEdit' => (bool) ($data['canEdit'] ?? false),
+            'media'   => [
+                'photo'     => is_string($media['photo'] ?? null) ? $media['photo'] : null,
+                'signature' => is_string($media['signature'] ?? null) ? $media['signature'] : null,
+            ],
         ];
     }
 }
