@@ -359,11 +359,14 @@ class FamilyExcelTemplate
 
         $heads = 'COUNTIFS(' . $aRange . ',' . $a . ',' . $bRange . ',"Head")';
         // Two separated blocks sharing one QR each carry their own Head; distinct head
-        // identities under a QR is the preflight's Duplicate-QR signal.
-        $headIdentities = 'SUMPRODUCT((' . $aRange . '=' . $a . ')*(' . $bRange . '="Head")/COUNTIFS(' . $aRange . ',' . $a . ',' . $bRange . ',"Head",' . $cRange . ',' . $cRange . ',' . $dRange . ',' . $dRange . '))';
+        // identities under a QR is the preflight's Duplicate-QR signal. The denominator
+        // mirrors every range (A/B/C/D) in its criteria pairs, so each row's own key
+        // counts itself and no element divides by zero.
+        $headIdentities = 'SUMPRODUCT((' . $aRange . '=' . $a . ')*(' . $bRange . '="Head")/COUNTIFS(' . $aRange . ',' . $aRange . ',' . $bRange . ',' . $bRange . ',' . $cRange . ',' . $cRange . ',' . $dRange . ',' . $dRange . '))';
         // One QR = one household: more than one non-blank address under a QR means rows
-        // from two different households were pasted together.
-        $addresses = 'SUMPRODUCT((' . $aRange . '=' . $a . ')*(' . $oRange . '<>"")/COUNTIFS(' . $aRange . ',' . $a . ',' . $oRange . ',' . $oRange . '))';
+        // from two different households were pasted together. The denominator mirrors the
+        // A and O ranges in its criteria pairs for the same zero-division reason.
+        $addresses = 'SUMPRODUCT((' . $aRange . '=' . $a . ')*(' . $oRange . '<>"")/COUNTIFS(' . $aRange . ',' . $aRange . ',' . $oRange . ',' . $oRange . '))';
 
         // Innermost "OK" first; each issue wraps the previous one as its else-branch,
         // so the formula evaluates from the outermost check inward. A row with more

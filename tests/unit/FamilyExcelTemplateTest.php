@@ -92,6 +92,37 @@ final class FamilyExcelTemplateTest extends CIUnitTestCase
         $this->assertStringContainsString('Data Completeness', $guide);
     }
 
+    public function testCheckFormulaDistinctCountDenominatorsMirrorTheirRanges(): void
+    {
+        $formula = (string) $this->familiesSheet()->getCell('S3')->getValue();
+
+        // The distinct-count idioms in the Check formula divide by a COUNTIFS whose
+        // criteria pairs must mirror the SAME ranges they count over. Scalar criteria
+        // ("$A3" / "Head" / "$A3" + current address) leave a 0 denominator for
+        // differently-named members and trailing blank rows, which real Excel turns
+        // into #DIV/0! for the whole column.
+        $this->assertStringContainsString(
+            'COUNTIFS($A$3:$A$1000,$A$3:$A$1000,$B$3:$B$1000,$B$3:$B$1000,$C$3:$C$1000,$C$3:$C$1000,$D$3:$D$1000,$D$3:$D$1000)',
+            $formula,
+            'head-identity denominator must mirror the A/B/C/D ranges'
+        );
+        $this->assertStringContainsString(
+            'COUNTIFS($A$3:$A$1000,$A$3:$A$1000,$O$3:$O$1000,$O$3:$O$1000)',
+            $formula,
+            'address denominator must mirror the A and O ranges'
+        );
+        $this->assertStringNotContainsString(
+            'COUNTIFS($A$3:$A$1000,$A3,$B$3:$B$1000,"Head",$C$3:$C$1000',
+            $formula,
+            'head-identity denominator must not use scalar QR/Head criteria'
+        );
+        $this->assertStringNotContainsString(
+            'COUNTIFS($A$3:$A$1000,$A3,$O$3:$O$1000,',
+            $formula,
+            'address denominator must not use a scalar QR criterion'
+        );
+    }
+
     /**
      * The first conditional rule over the CHECK range whose condition text
      * satisfies $match, or null when no rule does.
