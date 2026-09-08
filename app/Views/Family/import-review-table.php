@@ -44,9 +44,9 @@ $summary = $summary ?? [];
                 <th scope="col" class="import-review-compact-col">Row</th>
                 <th scope="col" class="import-review-compact-col">ID</th>
                 <th scope="col" class="import-review-compact-col">Role</th>
-                <th scope="col" style="min-width: 140px;">Last Name</th>
-                <th scope="col" style="min-width: 140px;">First Name</th>
-                <th scope="col" style="min-width: 140px;">Middle Name</th>
+                <th scope="col" class="import-review-name-col">Last Name</th>
+                <th scope="col" class="import-review-name-col">First Name</th>
+                <th scope="col" class="import-review-name-col">Middle Name</th>
                 <th scope="col" class="w-100">Issues</th>
                 <th scope="col" class="import-review-open-col"><span class="visually-hidden">Open</span></th>
             </tr>

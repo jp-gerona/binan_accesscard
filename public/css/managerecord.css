@@ -645,6 +645,12 @@ div.dt-container div.dt-search .input-group {
     white-space: nowrap;
 }
 
+/* Name columns keep a readable floor without squeezing the Issues column that
+   fills the remaining width; the class replaces an inline style here. */
+#importReviewTable .import-review-name-col {
+    min-width: 140px;
+}
+
 /* Duplicate review decisions remain local to the import table: muted discarded rows
    stay readable, and the resolver cards keep each candidate's action beside it.
    --bs-secondary-color only exists in Bootstrap 5.3+, so use Bootstrap 5.2.3's

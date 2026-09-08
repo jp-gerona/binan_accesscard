@@ -7,9 +7,10 @@ use CodeIgniter\Test\CIUnitTestCase;
 
 /**
  * The entry page is a vertical stepper spine, not a wizard: the control number
- * is step 1 and gates steps 2 and 3, and all three stay reachable at once
- * (non-linear) because the officer is transcribing from one paper sheet where
- * head and members are both visible.
+ * is step 1 and gates the three steps below it (head, photo and signature,
+ * members), and all four stay reachable at once (non-linear) because the
+ * officer is transcribing from one paper sheet where head and members are both
+ * visible.
  */
 final class FamilyEntryPageTest extends CIUnitTestCase
 {
@@ -28,14 +29,15 @@ final class FamilyEntryPageTest extends CIUnitTestCase
         ]);
     }
 
-    public function testTheSpineHasThreeStepsNotFour(): void
+    public function testTheSpineHasFourSteps(): void
     {
         $html = $this->render();
 
         $this->assertStringContainsString('stepper stepper-vertical', $html);
-        $this->assertSame(3, substr_count($html, '<li class="stepper-step"'));
+        $this->assertSame(4, substr_count($html, '<li class="stepper-step"'));
         $this->assertStringContainsString('Control Number', $html);
         $this->assertStringContainsString('Head of Family', $html);
+        $this->assertStringContainsString('Photo & Signature', $html);
         $this->assertStringContainsString('Members of the Family', $html);
     }
 
@@ -77,6 +79,7 @@ final class FamilyEntryPageTest extends CIUnitTestCase
 
         $this->assertStringContainsString('href="#section-control"', $html);
         $this->assertStringContainsString('href="#section-head"', $html);
+        $this->assertStringContainsString('href="#section-media"', $html);
         $this->assertStringContainsString('href="#section-members"', $html);
     }
 
@@ -84,8 +87,8 @@ final class FamilyEntryPageTest extends CIUnitTestCase
     {
         $html = $this->render();
 
-        $this->assertSame(2, substr_count($html, 'data-entry-section'));
-        $this->assertSame(2, substr_count($html, 'class="stepper-step-content d-none"'));
+        $this->assertSame(3, substr_count($html, 'data-entry-section'));
+        $this->assertSame(3, substr_count($html, 'class="stepper-step-content d-none"'));
     }
 
     public function testTheEntryRootWrapsTheFormSoTheSharedJsStillBinds(): void

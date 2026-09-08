@@ -15,8 +15,9 @@
 // [data-family-entry-form] sits on the outer <div>, one level above <form>,
 // not on the form itself - manage-family-modal.js does root.querySelector('form')
 // from that marker in several places, and would silently find nothing if the
-// marker sat on the form. The two gated sections are separate
-// [data-entry-section] nodes (section-head, section-members), not one wrapper.
+// marker sat on the form. The three gated sections are separate
+// [data-entry-section] nodes (section-head, section-media, section-members),
+// not one wrapper.
 //
 // Run with: node tests/js/entry-page-gate.smoke.mjs
 // Exits non-zero (and prints the failure) if the script throws during init, if
@@ -317,9 +318,10 @@ const gate = el(
 );
 
 const sectionHead = el('div', { class: 'stepper-step-content d-none', id: 'section-head', 'data-entry-section': '' });
+const sectionMedia = el('div', { class: 'stepper-step-content d-none', id: 'section-media', 'data-entry-section': '' });
 const sectionMembers = el('div', { class: 'stepper-step-content d-none', id: 'section-members', 'data-entry-section': '' });
 
-// entry.php's actual spine: three <li class="stepper-step"> under #entrySpine,
+// entry.php's actual spine: four <li class="stepper-step"> under #entrySpine,
 // each carrying a .stepper-step-link (aria-current / aria-disabled) and a
 // [data-step-state-prefix] visually-hidden span. setStepStates() drives these
 // on every gate transition, so the fixture has to nest them the same way the
@@ -336,9 +338,14 @@ const step2 = el('li', { class: 'stepper-step', 'data-state': 'upcoming' }, [ste
 const step3Link = el('a', { class: 'stepper-step-link', 'aria-disabled': 'true' });
 const step3Prefix = el('span', { 'data-step-state-prefix': '' });
 step3Prefix.textContent = 'Locked, '; // matches entry.php's server-rendered initial markup
-const step3 = el('li', { class: 'stepper-step', 'data-state': 'upcoming' }, [step3Link, step3Prefix, sectionMembers]);
+const step3 = el('li', { class: 'stepper-step', 'data-state': 'upcoming' }, [step3Link, step3Prefix, sectionMedia]);
 
-const entrySpine = el('nav', { id: 'entrySpine' }, [el('ol', {}, [step1, step2, step3])]);
+const step4Link = el('a', { class: 'stepper-step-link', 'aria-disabled': 'true' });
+const step4Prefix = el('span', { 'data-step-state-prefix': '' });
+step4Prefix.textContent = 'Locked, '; // matches entry.php's server-rendered initial markup
+const step4 = el('li', { class: 'stepper-step', 'data-state': 'upcoming' }, [step4Link, step4Prefix, sectionMembers]);
+
+const entrySpine = el('nav', { id: 'entrySpine' }, [el('ol', {}, [step1, step2, step3, step4])]);
 
 const realControlNumberInput = el('input', { type: 'hidden', name: 'qr_control_no', 'data-entry-control-number': '' });
 const saveButton = el('button', { type: 'submit', 'data-family-save': '' });
@@ -501,6 +508,9 @@ assert.equal(step2Prefix.textContent, 'Locked, ', 'Step 2 should announce "Locke
 assert.equal(step3.getAttribute('data-state'), 'upcoming', 'Step 3 should be upcoming before the gate opens.');
 assert.equal(step3Link.getAttribute('aria-disabled'), 'true', 'Step 3 link should be aria-disabled before the gate opens.');
 assert.equal(step3Prefix.textContent, 'Locked, ', 'Step 3 should announce "Locked, " before the gate opens.');
+assert.equal(step4.getAttribute('data-state'), 'upcoming', 'Step 4 should be upcoming before the gate opens.');
+assert.equal(step4Link.getAttribute('aria-disabled'), 'true', 'Step 4 link should be aria-disabled before the gate opens.');
+assert.equal(step4Prefix.textContent, 'Locked, ', 'Step 4 should announce "Locked, " before the gate opens.');
 
 controlNumberField.value = '12345';
 controlNumberField.dispatch('input');
@@ -512,6 +522,7 @@ flushTimers(1000);
 await new Promise((resolve) => setImmediate(resolve));
 
 assert.equal(sectionHead.classList.contains('d-none'), false, 'A control number the server reports available must reveal the head section.');
+assert.equal(sectionMedia.classList.contains('d-none'), false, 'A control number the server reports available must reveal the media section.');
 assert.equal(sectionMembers.classList.contains('d-none'), false, 'A control number the server reports available must reveal the members section.');
 assert.equal(realControlNumberInput.value, '12345', 'The hidden qr_control_no field must be filled once the gate clears.');
 
@@ -525,7 +536,10 @@ assert.equal(step2.getAttribute('data-state'), 'current', 'Step 2 should be curr
 assert.equal(step2Link.getAttribute('aria-current'), 'step', 'Step 2 link should carry aria-current once the gate opens.');
 assert.equal(step2Link.getAttribute('aria-disabled'), null, 'Step 2 link should no longer be aria-disabled once the gate opens.');
 assert.equal(step2Prefix.textContent, '', 'Step 2 should no longer announce "Locked, " once the gate opens.');
+assert.equal(step3.getAttribute('data-state'), 'available', 'Step 3 should be available once the gate opens.');
 assert.equal(step3Prefix.textContent, '', 'Step 3 should no longer announce "Locked, " once the gate opens.');
+assert.equal(step4.getAttribute('data-state'), 'available', 'Step 4 should be available once the gate opens.');
+assert.equal(step4Prefix.textContent, '', 'Step 4 should no longer announce "Locked, " once the gate opens.');
 
 // Only once the gate has actually opened should the draft get offered - this
 // is bindControlNumberGate's own offerDraftRestoreIfVisible(root) call on the

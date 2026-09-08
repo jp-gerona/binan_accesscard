@@ -92,37 +92,39 @@ final class FamilyExcelTemplateTest extends CIUnitTestCase
         $this->assertStringContainsString('Data Completeness', $guide);
     }
 
-    public function testCheckFormulaDistinctCountDenominatorsMirrorTheirRanges(): void
+    public function testCheckFormulaCountsTheWholeEntryAreaWithBoundedScalarCriteria(): void
     {
         $formula = (string) $this->familiesSheet()->getCell('S3')->getValue();
 
-        // The distinct-count idioms in the Check formula divide by a COUNTIFS whose
-        // criteria pairs must mirror the SAME ranges they count over AND append the
-        // &"" sentinel to every criteria range. Excel counts an empty cell as equal
-        // to 0, not to blank, so without the sentinel a blank array position gives a
-        // 0 denominator while the numerator is 0 and real Excel turns that into
-        // #DIV/0! for the whole column. The sentinel coerces empty criteria to ""
-        // which matches blank cells, keeping every denominator >= 1.
+        // The Check formula reads the whole entry area with COUNTIFS over absolute
+        // bounded ranges and scalar criteria. There is deliberately no division and
+        // no array criteria: PhpSpreadsheet corrupts the XML for dynamic-array
+        // idioms, and a scalar criteria COUNTIFS cannot produce #DIV/0! because
+        // nothing divides. Every family-block condition must cover the same row
+        // window (3 through 1000) or the sheet's own guidance under-reports.
         $this->assertStringContainsString(
-            'COUNTIFS($A$3:$A$1000,$A$3:$A$1000&"",$B$3:$B$1000,$B$3:$B$1000&"",$C$3:$C$1000,$C$3:$C$1000&"",$D$3:$D$1000,$D$3:$D$1000&"")',
+            'COUNTIFS($A$3:$A$1000,$A3,$B$3:$B$1000,"Head")',
             $formula,
-            'head-identity denominator must mirror the A/B/C/D ranges with the &"" sentinel'
+            'the head count must read the whole QR and Relationship columns'
         );
         $this->assertStringContainsString(
-            'COUNTIFS($A$3:$A$1000,$A$3:$A$1000&"",$O$3:$O$1000,$O$3:$O$1000&"")',
+            'COUNTIFS($A$3:$A$1000,$A3,$B$3:$B$1000,"Head",$C$3:$C$1000,"<>"&$C3)',
             $formula,
-            'address denominator must mirror the A and O ranges with the &"" sentinel'
+            'the duplicate-QR check must compare head last names across the entry area'
         );
-        $this->assertStringNotContainsString(
-            'COUNTIFS($A$3:$A$1000,$A3,$B$3:$B$1000,"Head",$C$3:$C$1000',
+        $this->assertStringContainsString(
+            'COUNTIFS($A$3:$A$1000,$A3,$O$3:$O$1000,"<>"&$O3,$O$3:$O$1000,"<>")',
             $formula,
-            'head-identity denominator must not use scalar QR/Head criteria'
+            'the multiple-address check must read the whole QR and Address columns'
         );
-        $this->assertStringNotContainsString(
-            'COUNTIFS($A$3:$A$1000,$A3,$O$3:$O$1000,',
-            $formula,
-            'address denominator must not use a scalar QR criterion'
-        );
+
+        foreach (['No Head in Family', 'Multiple Heads (Same Family)', 'Duplicate QR (Multiple Families)', 'Multiple Addresses in Family', 'Missing Income', 'OK'] as $label) {
+            $this->assertStringContainsString('"' . $label . '"', $formula);
+        }
+
+        // The array-criteria idiom this formula replaced is what corrupted the
+        // generated XML; it must stay out.
+        $this->assertStringNotContainsString('COUNTIFS($A$3:$A$1000,$A$3:$A$1000', $formula);
     }
 
     /**

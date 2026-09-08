@@ -118,6 +118,15 @@ final class FamilyProfilePageTest extends CIUnitTestCase
         $this->assertStringContainsString('accept="image/jpeg"', $html);
         $this->assertStringContainsString('name="head_signature"', $html);
         $this->assertStringContainsString('accept="image/png"', $html);
-        $this->assertStringContainsString('(optional)', $html);
+        // Both inputs submit empty when untouched, which is what makes them optional.
+        $this->assertMatchesRegularExpression('/<input[^>]*name="head_photo"[^>]*>/', $html);
+        $this->assertStringNotContainsString('required', $this->firstMediaInput($html, 'head_photo'));
+    }
+
+    private function firstMediaInput(string $html, string $name): string
+    {
+        preg_match('/<input[^>]*name="' . $name . '"[^>]*>/', $html, $match);
+
+        return $match[0] ?? '';
     }
 }
