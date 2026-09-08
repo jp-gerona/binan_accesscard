@@ -283,20 +283,56 @@ final class FamilyExcelImporterTest extends CIUnitTestCase
         }
     }
 
+    public function testCanonicalRowsStageCleanedValues(): void
+    {
+        $rows = (new FamilyExcelImporter())->normalizeRows([[
+            'sheetRow' => 3,
+            'data' => [
+                'familyno' => '0001', 'relationship' => 'Head',
+                'firstname' => 'Maria  Jose', 'middlename' => 'De  La',
+                'lastname' => 'Santos', 'suffix' => 'Jr.',
+                'address' => 'Purok  1,', 'barangay' => 'Canlalay',
+                'sector' => 'sc, iw', 'services' => 'eda 8, eda9',
+            ],
+        ]]);
+
+        $this->assertSame('MARIA JOSE', $rows[0]['data']['firstname']);
+        $this->assertSame('DE LA', $rows[0]['data']['middlename']);
+        $this->assertSame('SANTOS', $rows[0]['data']['lastname']);
+        $this->assertSame('JR', $rows[0]['data']['suffix']);
+        $this->assertSame('PUROK 1,', $rows[0]['data']['address']);
+        $this->assertSame('CANLALAY', $rows[0]['data']['barangay']);
+        $this->assertSame('SC,IW', $rows[0]['data']['sector']);
+        $this->assertSame('EDA8,EDA9', $rows[0]['data']['services']);
+    }
+
+    public function testCanonicalRowsPreserveDistinctPunctuationAndUnsplitCodes(): void
+    {
+        $rows = (new FamilyExcelImporter())->normalizeRows([
+            ['sheetRow' => 3, 'data' => ['services' => 'EDA8 EDA9', 'address' => 'Purok 1.']],
+            ['sheetRow' => 4, 'data' => ['address' => 'Purok 1']],
+        ]);
+
+        $this->assertSame('EDA8EDA9', $rows[0]['data']['services']);
+        $this->assertSame('PUROK 1.', $rows[0]['data']['address']);
+        $this->assertSame('PUROK 1', $rows[1]['data']['address']);
+        $this->assertNotSame($rows[0]['data']['address'], $rows[1]['data']['address']);
+    }
+
     public function testSuffixNormalisesDotSilently(): void
     {
-        // "Jr." is just a trailing dot - accepted silently, stored as "Jr".
+        // "Jr." is just a trailing dot - accepted silently, stored as "JR".
         $ok = $this->importer()->validateAndBuild([
             $this->headRow(3, '6001', ['suffix' => 'Jr.']),
         ]);
         $this->assertNotContains('SUFFIX', $this->codes($ok));
-        $this->assertSame('Jr', $ok['families'][0]['headPayload']['suffix']);
+        $this->assertSame('JR', $ok['families'][0]['headPayload']['suffix']);
     }
 
     public function testSuffixMapsVariantsToDropdownValueWithWarning(): void
     {
         // "the 3rd" and "Junior" are real changes - coerced to the dropdown value + warned.
-        $map = ['the 3rd' => 'III', 'Junior' => 'Jr', '2nd' => 'II'];
+        $map = ['the 3rd' => 'III', 'Junior' => 'JR', '2nd' => 'II'];
 
         foreach ($map as $typed => $expected) {
             $result = $this->importer()->validateAndBuild([

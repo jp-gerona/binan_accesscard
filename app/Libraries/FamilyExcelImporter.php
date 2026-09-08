@@ -43,13 +43,13 @@ class FamilyExcelImporter
     public const QR_MAX = 2147483647;
 
     /**
-     * Common suffix spellings → the canonical dropdown value (Jr/Sr/I-V). Keys are
+     * Common suffix spellings → the canonical dropdown value (JR/SR/I-V). Keys are
      * lowercased with dots removed. Lets "Junior", "the 3rd", "2nd" map to a valid enum
      * value instead of being dropped, so the DB never sees an out-of-enum suffix.
      */
     private const SUFFIX_ALIASES = [
-        'jr' => 'Jr', 'junior' => 'Jr',
-        'sr' => 'Sr', 'senior' => 'Sr',
+        'jr' => 'JR', 'junior' => 'JR',
+        'sr' => 'SR', 'senior' => 'SR',
         'i' => 'I', '1' => 'I', '1st' => 'I', 'first' => 'I',
         'ii' => 'II', '2' => 'II', '2nd' => 'II', 'second' => 'II',
         'iii' => 'III', '3' => 'III', '3rd' => 'III', 'third' => 'III',
@@ -165,6 +165,25 @@ class FamilyExcelImporter
     }
 
     /**
+     * Canonicalizes a row set for review and validation. QR and birthday values stay
+     * intact for their dedicated parsers; all other known textual fields are staged in
+     * their canonical form.
+     *
+     * @param list<array{sheetRow:int|string,data:array<string,string>}> $rows
+     * @return list<array{sheetRow:int|string,data:array<string,string>}>
+     */
+    public function normalizeRows(array $rows): array
+    {
+        foreach ($rows as $index => $entry) {
+            $rows[$index]['data'] = $this->normalizeRow(
+                is_array($entry['data'] ?? null) ? $entry['data'] : []
+            );
+        }
+
+        return $rows;
+    }
+
+    /**
      * Reads a workbook into a normalized row set. Each row is
      * `['sheetRow'=>int, 'data'=>[normalizedHeader => trimmed string]]`. QR cells are
      * kept verbatim (placeholders like "N/A" are NOT blanked, so they surface as a
@@ -240,6 +259,7 @@ class FamilyExcelImporter
         $this->memberCount    = 0;
         $this->rowCount       = 0;
         $this->groupCount     = 0;
+        $rows                 = $this->normalizeRows($rows);
 
         $sectorByCode  = $this->sectorCodeMap();
         $serviceByCode = $this->serviceCodeMap();
@@ -714,7 +734,57 @@ class FamilyExcelImporter
             $rows[] = ['sheetRow' => $row, 'data' => $values];
         }
 
-        return $rows;
+        return $this->normalizeRows($rows);
+    }
+
+    /**
+     * Canonicalizes one row's known textual fields while preserving unknown columns
+     * for the review UI.
+     *
+     * @param array<string,string> $data
+     * @return array<string,string>
+     */
+    private function normalizeRow(array $data): array
+    {
+        foreach ([
+            'firstname', 'middlename', 'lastname', 'relationship', 'suffix', 'sex', 'civilstatus', 'contactnumber',
+            'religion', 'education', 'job', 'monthlyincome', 'address', 'barangay',
+            'sector', 'services',
+        ] as $field) {
+            if (array_key_exists($field, $data)) {
+                $data[$field] = MemberFieldNormalizer::blankIfNoData($data[$field]);
+            }
+        }
+
+        foreach (['firstname', 'middlename', 'lastname'] as $field) {
+            if (array_key_exists($field, $data)) {
+                $data[$field] = MemberFieldNormalizer::cleanName($data[$field]);
+            }
+        }
+
+        foreach (['address', 'barangay'] as $field) {
+            if (array_key_exists($field, $data)) {
+                $data[$field] = MemberFieldNormalizer::cleanAddress($data[$field]);
+            }
+        }
+
+        foreach (['relationship', 'sex', 'civilstatus', 'religion', 'education', 'job'] as $field) {
+            if (array_key_exists($field, $data)) {
+                $data[$field] = mb_strtoupper(trim($data[$field]), 'UTF-8');
+            }
+        }
+
+        if (array_key_exists('suffix', $data)) {
+            $data['suffix'] = mb_strtoupper(trim(str_replace('.', '', $data['suffix'])), 'UTF-8');
+        }
+
+        foreach (['sector', 'services'] as $field) {
+            if (array_key_exists($field, $data)) {
+                $data[$field] = $this->canonicalCodeList($data[$field]);
+            }
+        }
+
+        return $data;
     }
 
     /**
@@ -1040,7 +1110,7 @@ class FamilyExcelImporter
 
         // Contact number (optional): warn if present and not 09 + 11 digits.
         $this->validateContact($row, $familyNo, (string) ($data['contactnumber'] ?? ''));
-        // Suffix (optional): normalise "Jr."->"Jr" / map "the 3rd"->"III"; an unmappable
+        // Suffix (optional): normalise "Jr."->"JR" / map "the 3rd"->"III"; an unmappable
         // suffix is left blank (so the DB enum insert can't fail) with a warning.
         $suffix = $this->validateSuffix($row, $familyNo, (string) ($data['suffix'] ?? ''));
 
@@ -1381,9 +1451,9 @@ class FamilyExcelImporter
     }
 
     /**
-     * Maps a name suffix to a valid dropdown value (Jr, Sr, I-V) so the DB enum is always
+     * Maps a name suffix to a valid dropdown value (JR, SR, I-V) so the DB enum is always
      * satisfied. Blank stays blank. A trivial cleanup (case / trailing dot) is applied
-     * silently; a real change ("Junior" -> "Jr", "the 3rd" -> "III") is coerced with a
+     * silently; a real change ("Junior" -> "JR", "the 3rd" -> "III") is coerced with a
      * warning. Anything that maps to nothing is left blank (also enum-safe) with a warning.
      */
     private function validateSuffix(int $row, string $familyNo, string $raw): ?string
@@ -1865,6 +1935,23 @@ class FamilyExcelImporter
         }
 
         return $this->barangayIdMap()[$this->normalizeBarangay($value)] ?? null;
+    }
+
+    /**
+     * Canonicalizes a comma-separated code list without inferring separate codes
+     * from whitespace. Strict-code validation handles every resulting token.
+     */
+    private function canonicalCodeList(string $value): string
+    {
+        $codes = array_map(
+            static fn (string $code): string => mb_strtoupper(
+                (string) preg_replace('/\s+/u', '', trim($code)),
+                'UTF-8'
+            ),
+            explode(',', $value)
+        );
+
+        return implode(',', array_values(array_filter($codes, static fn (string $code): bool => $code !== '')));
     }
 
     /** @return list<string> Non-empty, trimmed tokens from a comma-separated cell. */
