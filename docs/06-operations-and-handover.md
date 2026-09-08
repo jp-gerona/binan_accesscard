@@ -75,6 +75,12 @@ Set the corresponding `.env` value, using an absolute local path:
 familymediasettings.root = '/var/lib/binan-accesscard-media'
 ```
 
+On macOS the folder must sit outside the Desktop, Documents, and Downloads
+folders. Those are privacy-protected: the web server or the logged-in terminal
+can read them, but the scheduled worker cannot, so every reconcile job fails
+with a listing error while the folder looks perfectly fine to whoever is logged
+in. A folder directly under the home directory or under `/Library` works.
+
 This handbook calls that configured folder `MEDIA_ROOT` in shell commands; it is
 not a second application setting. The application creates the two zones under
 it on first use, `MEDIA_ROOT/inbox/` for the office's drops and
