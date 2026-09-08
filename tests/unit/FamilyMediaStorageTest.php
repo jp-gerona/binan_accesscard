@@ -122,6 +122,35 @@ final class FamilyMediaStorageTest extends CIUnitTestCase
         $this->assertNull($this->storageFor(ROOTPATH)->pathFor('019186.photo.jpg'));
     }
 
+    public function testItRejectsProjectRootAncestorsAndPreservesExternalTemporaryRoots(): void
+    {
+        $this->writeJpeg('019186.photo.jpg', 100, 100);
+        $this->assertNotNull($this->storage->inspect('019186.photo.jpg'));
+
+        $projectRoot = realpath(ROOTPATH);
+        $this->assertNotFalse($projectRoot);
+        $ancestor = dirname($projectRoot);
+        $controlNo = random_int(1000000000, 9999999999);
+        $filename = sprintf('%06d.photo.jpg', $controlNo);
+        $destination = $ancestor . DIRECTORY_SEPARATOR . $filename;
+        $upload = tempnam(sys_get_temp_dir(), 'family-media-upload-');
+        $this->assertNotFalse($upload);
+        $this->assertFileDoesNotExist($destination);
+        $this->writeJpegAt($upload, 100, 100, [255, 255, 255]);
+
+        try {
+            $this->assertSame([], $this->storageFor($ancestor)->storeUpload(
+                new LocalUploadedFile($upload, 'ignored.jpg'),
+                $controlNo,
+                FamilyMediaModel::KIND_PHOTO,
+            ));
+            $this->assertFileDoesNotExist($destination);
+        } finally {
+            @unlink($upload);
+            @unlink($destination);
+        }
+    }
+
     public function testItScansOnlyAcceptedFiles(): void
     {
         $this->writeJpeg('019186.photo.jpg', 100, 100);

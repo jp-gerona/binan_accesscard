@@ -269,7 +269,8 @@ class FamilyMediaStorage
             }
 
             $projectPath = realpath((string) constant($constant));
-            if ($projectPath !== false && $this->isWithin($root, $projectPath)) {
+            if ($projectPath !== false && ($this->isWithin($root, $projectPath)
+                || $this->isWithin($projectPath, $root))) {
                 return null;
             }
         }
@@ -282,6 +283,10 @@ class FamilyMediaStorage
         $directory = rtrim($directory, DIRECTORY_SEPARATOR);
         if ($directory === '') {
             $directory = DIRECTORY_SEPARATOR;
+        }
+
+        if ($directory === DIRECTORY_SEPARATOR) {
+            return str_starts_with($path, DIRECTORY_SEPARATOR);
         }
 
         return $path === $directory || str_starts_with($path, $directory . DIRECTORY_SEPARATOR);
