@@ -764,7 +764,8 @@ class FamilyExcelImporter
 
         foreach (['address', 'barangay'] as $field) {
             if (array_key_exists($field, $data)) {
-                $data[$field] = MemberFieldNormalizer::cleanAddress($data[$field]);
+                // Staging equality preserves every character except redundant whitespace.
+                $data[$field] = $this->canonicalAddress($data[$field]);
             }
         }
 
@@ -775,7 +776,7 @@ class FamilyExcelImporter
         }
 
         if (array_key_exists('suffix', $data)) {
-            $data['suffix'] = mb_strtoupper(trim(str_replace('.', '', $data['suffix'])), 'UTF-8');
+            $data['suffix'] = $this->canonicalSuffix($data['suffix']);
         }
 
         foreach (['sector', 'services'] as $field) {
@@ -785,6 +786,24 @@ class FamilyExcelImporter
         }
 
         return $data;
+    }
+
+    /** Canonicalizes staged addresses without discarding punctuation. */
+    private function canonicalAddress(string $value): string
+    {
+        return mb_strtoupper(
+            trim((string) preg_replace('/\s+/u', ' ', $value)),
+            'UTF-8'
+        );
+    }
+
+    /** Maps a suffix alias to its enum value while retaining invalid input for validation. */
+    private function canonicalSuffix(string $value): string
+    {
+        $value = trim((string) preg_replace('/\s+/u', ' ', str_replace('.', '', $value)));
+        $key   = (string) preg_replace('/^the\s+/', '', mb_strtolower($value, 'UTF-8'));
+
+        return self::SUFFIX_ALIASES[$key] ?? mb_strtoupper($value, 'UTF-8');
     }
 
     /**

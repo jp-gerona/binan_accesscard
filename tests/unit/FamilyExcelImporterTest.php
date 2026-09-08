@@ -317,6 +317,26 @@ final class FamilyExcelImporterTest extends CIUnitTestCase
         $this->assertSame('PUROK 1.', $rows[0]['data']['address']);
         $this->assertSame('PUROK 1', $rows[1]['data']['address']);
         $this->assertNotSame($rows[0]['data']['address'], $rows[1]['data']['address']);
+
+        $semicolon = (new FamilyExcelImporter())->normalizeRows([
+            ['sheetRow' => 5, 'data' => ['address' => 'Purok 1;']],
+            ['sheetRow' => 6, 'data' => ['address' => 'Purok 1']],
+        ]);
+
+        $this->assertSame('PUROK 1;', $semicolon[0]['data']['address']);
+        $this->assertSame('PUROK 1', $semicolon[1]['data']['address']);
+        $this->assertNotSame($semicolon[0]['data']['address'], $semicolon[1]['data']['address']);
+    }
+
+    public function testCanonicalRowsMapSuffixAliasesToEnumValues(): void
+    {
+        $rows = (new FamilyExcelImporter())->normalizeRows([
+            ['sheetRow' => 3, 'data' => ['suffix' => 'Junior']],
+            ['sheetRow' => 4, 'data' => ['suffix' => 'Senior']],
+        ]);
+
+        $this->assertSame('JR', $rows[0]['data']['suffix']);
+        $this->assertSame('SR', $rows[1]['data']['suffix']);
     }
 
     public function testSuffixNormalisesDotSilently(): void
@@ -329,16 +349,16 @@ final class FamilyExcelImporterTest extends CIUnitTestCase
         $this->assertSame('JR', $ok['families'][0]['headPayload']['suffix']);
     }
 
-    public function testSuffixMapsVariantsToDropdownValueWithWarning(): void
+    public function testSuffixMapsVariantsToDropdownValue(): void
     {
-        // "the 3rd" and "Junior" are real changes - coerced to the dropdown value + warned.
+        // Staging has already coerced aliases to enum-valid dropdown values.
         $map = ['the 3rd' => 'III', 'Junior' => 'JR', '2nd' => 'II'];
 
         foreach ($map as $typed => $expected) {
             $result = $this->importer()->validateAndBuild([
                 $this->headRow(3, '6001', ['suffix' => $typed]),
             ]);
-            $this->assertContains('SUFFIX', $this->codes($result), "expected '{$typed}' to warn");
+            $this->assertNotContains('SUFFIX', $this->codes($result), "expected '{$typed}' to stage silently");
             $this->assertSame($expected, $result['families'][0]['headPayload']['suffix'], "'{$typed}' should map to {$expected}");
         }
     }
