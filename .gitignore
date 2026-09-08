@@ -83,6 +83,9 @@ Vagrantfile
 /writable/import-staging/*
 !/writable/import-staging/index.html
 
+# Media reconcile producer lock (runtime state, created by every queue-worker fire)
+/writable/media-reconcile-enqueue.lock
+
 #-------------------------
 # Local scratch / junk
 #-------------------------
