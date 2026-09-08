@@ -317,6 +317,33 @@ final class ImportReviewPresenterTest extends CIUnitTestCase
         $this->assertSame($takenIssue['label'], $labels['QR-TAKEN']);
     }
 
+    public function testMissingIssuesRetainEveryFieldLabelAndTheCodeFilterNamesAllFields(): void
+    {
+        $result = [
+            'rows' => [$this->row(3, '6001', 'Head')],
+            'errors' => [
+                $this->error(3, '6001', 'REQUIRED', 'blocking', 'firstname'),
+                $this->error(3, '6001', 'REQUIRED', 'blocking', 'lastname'),
+                $this->error(3, '6001', 'INCOMPLETE', 'warning', 'birthday'),
+                $this->error(3, '6001', 'INCOMPLETE', 'warning', 'monthlyincome'),
+            ],
+        ];
+
+        $labels = array_column($this->page($result)['rows'][0]['issues'], 'label');
+        sort($labels);
+
+        $this->assertSame([
+            'Missing Birthday',
+            'Missing FirstName',
+            'Missing Income',
+            'Missing LastName',
+        ], $labels);
+
+        $filterLabels = array_column((new ImportReviewPresenter())->build($result)['codes'], 'label', 'code');
+        $this->assertSame('Missing FirstName, Missing LastName', $filterLabels['REQUIRED']);
+        $this->assertSame('Missing Birthday, Missing Income', $filterLabels['INCOMPLETE']);
+    }
+
     public function testIssuesCarryTheirExcelCellReference(): void
     {
         $result = [

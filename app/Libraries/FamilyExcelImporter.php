@@ -59,7 +59,7 @@ class FamilyExcelImporter
 
     /**
      * Curated typo variants measured in real files -> the canonical code. Anything
-     * not here is resolved by spacing/case normalisation or skipped with a warning.
+     * not here is resolved by spacing/case normalisation or rejected as invalid.
      */
     private const SERVICE_ALIASES = [
         'ED8A' => 'EDA8',

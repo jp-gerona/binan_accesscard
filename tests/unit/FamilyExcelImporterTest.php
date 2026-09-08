@@ -383,7 +383,7 @@ final class FamilyExcelImporterTest extends CIUnitTestCase
         $sex = $this->errorsFor($result, 'SEX');
         $this->assertCount(1, $sex);
         $this->assertSame('warning', $sex[0]['severity']);
-        $this->assertStringContainsString('Xyz', $sex[0]['message']);
+        $this->assertStringContainsString('XYZ', $sex[0]['message']);
         $this->assertNull($result['families'][0]['headPayload']['sex']);
     }
 
@@ -600,7 +600,7 @@ final class FamilyExcelImporterTest extends CIUnitTestCase
         $this->assertCount(1, $headNone);
         $this->assertSame(4, $headNone[0]['sheetRow']); // anchored on Juan, who has the address
         $this->assertStringContainsString('most likely the Head', $headNone[0]['message']);
-        $this->assertStringContainsString('Juan', $headNone[0]['message']);
+        $this->assertStringContainsString('JUAN DELA CRUZ', $headNone[0]['message']);
     }
 
     public function testHeadlessFamilyWithNoAddressSaysSo(): void

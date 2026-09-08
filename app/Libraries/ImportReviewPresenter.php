@@ -264,7 +264,7 @@ class ImportReviewPresenter
      */
     private function issuesFor(array $errors, array $columns, int $sheetRow): array
     {
-        $byCode = [];
+        $byIssue = [];
 
         foreach ($errors as $error) {
             $code = (string) ($error['code'] ?? '');
@@ -274,14 +274,16 @@ class ImportReviewPresenter
             }
 
             $severity = (($error['severity'] ?? 'blocking') === 'blocking') ? 'blocking' : 'warning';
+            $field = $error['field'] ?? null;
+            // REQUIRED and INCOMPLETE can apply to several cells on one row. Keep
+            // one issue per code/field pair, while still coalescing exact repeats.
+            $key = $code . "\0" . (string) $field;
 
-            if (isset($byCode[$code]) && ($byCode[$code]['severity'] === 'blocking' || $severity !== 'blocking')) {
+            if (isset($byIssue[$key]) && ($byIssue[$key]['severity'] === 'blocking' || $severity !== 'blocking')) {
                 continue;
             }
 
-            $field = $error['field'] ?? null;
-
-            $byCode[$code] = [
+            $byIssue[$key] = [
                 'code'     => $code,
                 'label'    => $this->issueLabel($error),
                 'severity' => $severity,
@@ -292,7 +294,7 @@ class ImportReviewPresenter
             ];
         }
 
-        $out = array_values($byCode);
+        $out = array_values($byIssue);
 
         usort($out, static fn (array $a, array $b): int =>
             (($a['severity'] === 'blocking') ? 0 : 1) <=> (($b['severity'] === 'blocking') ? 0 : 1));
@@ -366,26 +368,37 @@ class ImportReviewPresenter
 
             $severity = (($error['severity'] ?? 'blocking') === 'blocking') ? 'blocking' : 'warning';
 
-            if (isset($byCode[$code]) && ($byCode[$code]['severity'] === 'blocking' || $severity !== 'blocking')) {
-                continue;
+            if (! isset($byCode[$code])) {
+                $byCode[$code] = [
+                    'code'     => $code,
+                    'severity' => $severity,
+                    'labels'   => [],
+                ];
             }
 
-            $byCode[$code] = [
-                'code'     => $code,
-                'label'    => $this->issueLabel($error),
-                'severity' => $severity,
-            ];
+            if ($severity === 'blocking') {
+                $byCode[$code]['severity'] = 'blocking';
+            }
+
+            // A filter covers every field carrying its code. List every friendly
+            // field label instead of falsely naming only the first such field.
+            $byCode[$code]['labels'][$this->issueLabel($error)] = true;
         }
 
         ksort($byCode);
+
+        foreach ($byCode as &$entry) {
+            $entry['label'] = implode(', ', array_keys($entry['labels']));
+            unset($entry['labels']);
+        }
+        unset($entry);
 
         return array_values($byCode);
     }
 
     /**
-     * Returns the issue label shown in both the row and the code filter. REQUIRED
-     * and INCOMPLETE each cover several columns, so their label must identify the
-     * cell the operator needs to fill rather than just the shared machine code.
+     * Returns the friendly label shown for one row issue. REQUIRED and INCOMPLETE
+     * each cover several columns, so their label identifies the cell to fill.
      */
     private function issueLabel(array $error): string
     {
