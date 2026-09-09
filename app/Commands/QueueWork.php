@@ -12,12 +12,12 @@ use Throwable;
 /**
  * Generic background job worker. Drains the `job_queue` (and resumes crashed
  * `processing` jobs), dispatching each to the handler registered for its `type`
- * in Config\Queue. Fired every minute by Windows Task Scheduler via
+ * in Config\Queue. Fired every five minutes by Windows Task Scheduler via
  * scripts/queue-worker.ps1 so heavy work (Excel imports, future exports/reports,
  * etc.) runs off the web request's timeout/memory limit.
  *
  * Concurrency: a single OS file lock (writable/queue-worker.lock) guarantees only
- * one worker runs at a time, so an every-minute tick that fires while a long job is
+ * one worker runs at a time, so a scheduled tick that fires while a long job is
  * still going simply exits.
  *
  * Usage:
@@ -54,7 +54,7 @@ class QueueWork extends BaseCommand
         $deadline   = time() + $maxSeconds;
 
         // One lock per drainer slot: stops the same slot from stacking across the
-        // every-minute fires, while distinct slots still run in parallel.
+        // scheduled fires, while distinct slots still run in parallel.
         $lockPath   = WRITEPATH . 'queue-worker-' . $drainerId . '.lock';
         $lockHandle = fopen($lockPath, 'c');
 

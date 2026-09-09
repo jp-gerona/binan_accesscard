@@ -23,7 +23,7 @@ come back for a module chapter when you need it.
 | [02 Database](02-database.md) | The entity relationship diagram, a tour of all 18 tables including the V24 media registry, and why there are no migrations |
 | [03 Setup](03-setup.md) | Getting a checkout running: prerequisites, the dump, `.env`, and the three ways to serve the app |
 | [04 Networking](04-networking.md) | Reaching the app from somewhere other than localhost, and the `baseURL` rule that bites everyone once |
-| [05 Background worker](05-background-worker.md) | The job queue, the one-minute worker, and automatic private-media reconciliation |
+| [05 Background worker](05-background-worker.md) | The job queue, the five-minute worker, and automatic private-media reconciliation |
 | [06 Operations and handover](06-operations-and-handover.md) | Deploying, matched database and media-root backups, running the worker as a service, administering accounts, and where to look when something breaks |
 
 ## The modules

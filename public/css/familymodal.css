@@ -605,6 +605,19 @@
     font-weight: 800;
 }
 
+.family-media-preview {
+    width: auto;
+    object-fit: contain;
+}
+
+.family-media-preview-photo {
+    max-height: 150px;
+}
+
+.family-media-preview-signature {
+    max-height: 80px;
+}
+
 /* Collapse toggle for the sectors-and-programs block, identical on every card. */
 .family-choices {
     padding-top: 0.85rem;

@@ -8,7 +8,7 @@
     later) runs in the background and does NOT block or slow interactive users.
 
     This is the WORKER. It is invoked on a schedule by the Scheduled Task that
-    install-cron-worker.ps1 registers (every minute by default). To run it by hand:
+    install-cron-worker.ps1 registers (every five minutes by default). To run it by hand:
         .\queue-worker.ps1                 # drain now, default 250ms throttle
         .\queue-worker.ps1 -Throttle 500   # gentler on the DB
 
@@ -57,10 +57,9 @@ function Write-Log([string]$message) {
     Add-Content -Path $logFile -Value "[$stamp] $message" -Encoding utf8
 }
 
-# Enqueue a single media reconciliation run before draining the shared queue. The
-# producer's lock plus JobQueueModel::enqueueIfNoActive prevents overlapping
-# scheduler fires from stacking jobs; exit code is always successful here.
-$reconcileOutput = & $phpExe $spark 'media:queue-reconcile' 2>&1
+# Reconcile direct filesystem maintenance before draining user-requested jobs.
+# This avoids adding an idle terminal row to job_queue on every scheduler fire.
+$reconcileOutput = & $phpExe $spark 'media:reconcile' 2>&1
 if ($reconcileOutput -and $reconcileOutput.Trim() -ne '') {
     Write-Log $reconcileOutput.Trim()
 }

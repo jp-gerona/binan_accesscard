@@ -19,7 +19,6 @@ use App\Models\Families\FamilyMediaModel;
 use App\Models\Families\MemberModel;
 use App\Models\Families\MemberSectorModel;
 use App\Models\Families\MemberServiceModel;
-use App\Models\Jobs\JobQueueModel;
 use App\Models\Lookups\BarangayModel;
 use App\Models\Lookups\SectorModel;
 use App\Models\Lookups\ServiceModel;
@@ -892,9 +891,8 @@ class FamilyController extends BaseController
 
     /**
      * Stores optional head media only after the family transaction commits, then
-     * asks the same deduplicated reconciliation queue used for folder scans to
-     * link the canonical files. Media errors are warnings because the family save
-     * has already succeeded and must not be rolled back.
+     * resolves the canonical files immediately. Media errors are warnings because
+     * the family save has already succeeded and must not be rolled back.
      *
      * @return list<string>
      */
@@ -943,21 +941,6 @@ class FamilyController extends BaseController
             $reconciler->resolveInboxFiles($storedFilenames);
         } catch (Throwable) {
             $warnings[] = 'The optional media was saved but could not be linked instantly.';
-        }
-
-        try {
-            $queue = new JobQueueModel();
-            if (! $queue->hasTable()) {
-                if (! isset($warnings[0]) || strpos($warnings[0], 'instantly') === false) {
-                    $warnings[] = 'The optional media was saved but a background link task could not be queued.';
-                }
-            } else {
-                $queue->enqueueIfNoActive('media_reconcile', []);
-            }
-        } catch (Throwable) {
-            if (! isset($warnings[0]) || strpos($warnings[0], 'instantly') === false) {
-                $warnings[] = 'The optional media was saved but a background link task could not be queued.';
-            }
         }
 
         return $warnings;

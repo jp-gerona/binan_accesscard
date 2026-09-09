@@ -606,6 +606,38 @@ div.dt-container div.dt-search .input-group {
     max-width: 22rem;
 }
 
+/* The in-card review search needs enough room for a useful query without
+   crowding the page-size control off the same row. */
+.import-review-table-search {
+    flex: 1 1 250px;
+    max-width: 400px;
+}
+
+.family-media-label {
+    font-size: 0.75rem;
+    letter-spacing: 0.5px;
+}
+
+.family-media-image {
+    width: auto;
+    object-fit: contain;
+}
+
+.family-media-image-photo {
+    max-height: 200px;
+}
+
+.family-media-image-signature {
+    max-height: 120px;
+}
+
+@media (max-width: 991.98px) {
+    .import-review-table-search {
+        flex-basis: 100%;
+        max-width: none;
+    }
+}
+
 /* The paged import review table. Long issue labels pushed the table past its
    card, so the badges and the Fix button scrolled out of sight behind macOS's
    overlay scrollbar. Wrap the badges and grow the row downwards instead, and

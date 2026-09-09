@@ -15,19 +15,20 @@ memory limit and does **not** slow down other users. A web request only enqueues
 ```powershell
 cd C:\xampp\htdocs\binan_accesscard
 Set-ExecutionPolicy -Scope Process Bypass -Force
-.\scripts\install-cron-worker.ps1 -EveryMinutes 1
+.\scripts\install-cron-worker.ps1 -EveryMinutes 5
 ```
 
 This registers **BinanQueueWorker** as a Windows Scheduled Task that fires every
-minute, drains the queue, and exits. It runs under a dedicated least-privilege service account (not SYSTEM),
-which only requires read/write access to `writable/` and `writable/uploads/`, plus network access to MySQL.
-This follows the principle of least privilege since the worker parses untrusted uploaded files.
+five minutes, reconciles media directly, drains the queue, and exits. The
+included installer runs it as `SYSTEM` so it can run unattended. In a managed
+deployment, replace that account with a dedicated service account limited to
+`writable/`, `writable/uploads/`, the configured media root, and MySQL access.
 
 ### Tuning options
 
 | Option          | Default | Meaning                                                                 |
 |-----------------|---------|-------------------------------------------------------------------------|
-| `-EveryMinutes` | `1`     | Minutes between drains (ignored if `-At` is set).                       |
+| `-EveryMinutes` | `5`     | Minutes between drains (ignored if `-At` is set).                       |
 | `-At`           | —       | Nightly `HH:mm` local time; overrides the recurring schedule.           |
 | `-Throttle`     | `250`   | Milliseconds paused between chunks — DB breathing room for other users. |
 | `-Drainers`     | `1`     | Parallel drainers per fire. Claims are atomic so >1 is safe; keep at 1. |
@@ -35,7 +36,7 @@ This follows the principle of least privilege since the worker parses untrusted 
 
 ```powershell
 # Examples
-.\scripts\install-cron-worker.ps1 -At 01:30          # nightly instead of every minute
+.\scripts\install-cron-worker.ps1 -At 01:30          # nightly instead of the five-minute default
 .\scripts\install-cron-worker.ps1 -Throttle 500      # gentler on the database
 .\scripts\install-cron-worker.ps1 -Uninstall         # remove the task
 ```
@@ -86,5 +87,5 @@ A `job_queue` row stays `pending` because nothing is draining it. Check, in orde
    > even when the task exists — it runs under a service account. Use `schtasks /query /tn
    > BinanQueueWorker`: "Access is denied" means it exists; "cannot find the file"
    > means it doesn't.
-3. **Machine was asleep/off?** Every-minute ticks don't run then; they resume on wake
+3. **Machine was asleep/off?** Scheduled ticks don't run then; they resume on wake
    (with `StartWhenAvailable`). Drain the backlog now with `.\scripts\queue-worker.ps1`.

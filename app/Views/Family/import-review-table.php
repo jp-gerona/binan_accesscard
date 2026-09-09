@@ -8,7 +8,7 @@
 $summary = $summary ?? [];
 ?>
 <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
-    <form class="records-table-search-form mb-0" style="flex: 1 1 250px; max-width: 400px;" role="search" aria-label="Search this page" data-lookup-search>
+    <form class="records-table-search-form import-review-table-search mb-0" role="search" aria-label="Search this page" data-lookup-search>
         <div class="input-group input-group-sm">
             <input class="form-control" type="search" id="importReviewSearch" placeholder="Search this page..." autocomplete="off" aria-label="Search this page" data-lookup-search-input>
             <button class="btn btn-primary" type="submit" aria-label="Search this page"><i class="bi bi-search" aria-hidden="true"></i></button>

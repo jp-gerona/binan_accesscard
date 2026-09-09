@@ -240,7 +240,7 @@ stores the linked family head when known, the source control number and filename
 the kind, state, private application URL, and the fingerprint needed to notice a
 change. It is not a BLOB column and it does not contain image bytes. The JPEG or
 PNG remains in the private external folder configured by
-`familymediasettings.root`; the one-minute worker reconciles that folder into
+`familymediasettings.root`; the five-minute scheduled reconciler maintains that folder in
 this table. A row can be pending before its control number resolves to an
 imported head, linked when it is available, or missing after direct source-file
 deletion. Chapter 11 gives the operator workflow and chapter 06 covers matched

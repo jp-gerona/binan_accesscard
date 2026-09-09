@@ -120,11 +120,14 @@ final class FamilyMediaUploadTest extends CIUnitTestCase
 
         $this->assertSame(200, $response->response()->getStatusCode(), $response->getBody());
         $json = json_decode((string) $response->getJSON(), true, 512, JSON_THROW_ON_ERROR);
-        // Uploads enter through the same inbox the office drops into; the
-        // queued reconciler moves them into the store once it runs.
-        $this->assertFileExists($this->root . DIRECTORY_SEPARATOR . 'inbox' . DIRECTORY_SEPARATOR . '019187.photo.jpg');
-        $this->assertFileExists($this->root . DIRECTORY_SEPARATOR . 'inbox' . DIRECTORY_SEPARATOR . '019187.signature.png');
-        $this->assertSame(1, db_connect()->table('job_queue')->where('type', 'media_reconcile')->countAllResults());
+        $headId = (int) db_connect()->table('qr_control')->where('control_no', 19187)->get()->getRowArray()['headID'];
+        $store = $this->root . DIRECTORY_SEPARATOR . 'store' . DIRECTORY_SEPARATOR . intdiv($headId, 100)
+            . DIRECTORY_SEPARATOR . $headId . DIRECTORY_SEPARATOR;
+
+        $this->assertFileExists($store . 'photo.jpg');
+        $this->assertFileExists($store . 'signature.png');
+        $this->assertSame(2, db_connect()->table('family_media')->where('headID', $headId)->where('state', 'linked')->countAllResults());
+        $this->assertSame(0, db_connect()->table('job_queue')->where('type', 'media_reconcile')->countAllResults());
     }
 
     public function testEditReplacesAnUploadedPhotoAndOmittedMediaStaysUntouched(): void
@@ -144,7 +147,8 @@ final class FamilyMediaUploadTest extends CIUnitTestCase
         $first = $this->imageUpload('jpg', [255, 0, 0]);
         $firstResponse = $this->postUpdateWithUploads(7, 19188, ['head_photo' => $first]);
         $this->assertSame(200, $firstResponse->response()->getStatusCode(), $firstResponse->getBody());
-        $photoPath = $this->root . DIRECTORY_SEPARATOR . 'inbox' . DIRECTORY_SEPARATOR . '019188.photo.jpg';
+        $photoPath = $this->root . DIRECTORY_SEPARATOR . 'store' . DIRECTORY_SEPARATOR . '0' . DIRECTORY_SEPARATOR . '7'
+            . DIRECTORY_SEPARATOR . 'photo.jpg';
         $firstHash = hash_file('sha256', $photoPath);
 
         $replacement = $this->imageUpload('jpg', [0, 0, 255]);

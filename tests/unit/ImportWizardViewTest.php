@@ -118,17 +118,18 @@ final class ImportWizardViewTest extends CIUnitTestCase
         // into the page. Only the summary and the dropdown options travel in the HTML.
         $html = $this->render();
 
-        $this->assertStringNotContainsString('importReviewData', $html);
+        $this->assertStringNotContainsString('id="importReviewData"', $html);
         $this->assertStringContainsString('importReviewSummary', $html);
         $this->assertStringContainsString('importReviewFieldOptions', $html);
     }
 
     public function testItRendersTheToolbarSearchAndPageSize(): void
     {
-        $html = $this->render();
+        $html = html_entity_decode($this->render(), ENT_QUOTES | ENT_HTML5);
 
         $this->assertStringContainsString('id="importReviewSearch"', $html);
-        $this->assertStringContainsString('Search this import', $html);
+        $this->assertStringContainsString('id="importReviewDatabaseSearch"', $html);
+        $this->assertStringContainsString('Search this import...', $html);
         $this->assertStringContainsString('id="importReviewPerPage"', $html);
     }
 

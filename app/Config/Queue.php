@@ -14,7 +14,7 @@ use CodeIgniter\Config\BaseConfig;
  *   1. Write a handler implementing App\Jobs\JobHandlerInterface.
  *   2. Register it here under a unique type string.
  *   3. Enqueue work with JobQueueModel::enqueue('<type>', $payload, ...).
- * The `queue:work` worker (fired every minute) dispatches by type automatically.
+ * The `queue:work` worker (scheduled every five minutes by default) dispatches by type automatically.
  */
 class Queue extends BaseConfig
 {

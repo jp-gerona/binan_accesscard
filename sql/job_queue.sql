@@ -1,7 +1,7 @@
 -- Generic background job queue.
 --
 -- A web request enqueues a row here (status = 'pending') with a `type` and a JSON
--- `payload`; the background worker (`php spark queue:work`, fired every minute by
+-- `payload`; the background worker (`php spark queue:work`, scheduled every five minutes by
 -- Task Scheduler via scripts/queue-worker.ps1) claims it and dispatches to the
 -- handler registered for that type in Config\Queue. App\Models\Jobs\JobQueueModel::
 -- ensureTable() creates this table on demand, so importing this file is optional —

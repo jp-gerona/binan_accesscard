@@ -49,13 +49,13 @@ class FamilyMediaReconciler
      * Scans the inbox once, moves accepted files into the store, and verifies
      * every attached registry row against its stored file.
      *
-     * A root or database failure throws so the generic worker records a
-     * retry/failure instead of treating the folder as empty. Individual invalid
+     * A root or database failure throws so the calling worker or direct command
+     * reports a failure instead of treating the folder as empty. Individual invalid
      * files are counted and left in the inbox for the office to correct.
      *
      * @return array{seen:int,linked:int,pending:int,invalid:int,missing:int,replaced:int}
      */
-    public function run(JobReporter $reporter): array
+    public function run(?JobReporter $reporter = null): array
     {
         $counts = $this->emptyCounts();
 
@@ -72,7 +72,7 @@ class FamilyMediaReconciler
 
         $filenames = $this->storage->candidateFilenames();
         $total = count($filenames);
-        $reporter->setTotal($total);
+        $reporter?->setTotal($total);
 
         $known = $this->knownByFilename();
         $inboxSeen = [];
@@ -92,7 +92,7 @@ class FamilyMediaReconciler
                 } else {
                     // A pending, invalid, or missing row gets re-evaluated,
                     // because its family may have arrived or its file returned.
-                    $this->resolve($this->fromRow($row), $row, $counts);
+                    $this->resolve($this->fromRow($row), $row, $counts, false);
                 }
             } else {
                 $inspection = $this->storage->inspect($filename);
@@ -106,7 +106,7 @@ class FamilyMediaReconciler
 
             $done++;
 
-            if ($done % $this->batch === 0) {
+            if ($reporter !== null && $done % $this->batch === 0) {
                 $reporter->checkpoint($done, $done, $counts);
                 $reporter->pause();
             }
@@ -126,7 +126,7 @@ class FamilyMediaReconciler
 
         $this->verifyStore($counts);
 
-        $reporter->checkpoint($total, $total, $counts);
+        $reporter?->checkpoint($total, $total, $counts);
 
         return $counts;
     }
@@ -182,7 +182,7 @@ class FamilyMediaReconciler
      * @param array<string, mixed>|null $row
      * @param array<string, int>        $counts
      */
-    private function resolve(array $file, ?array $row, array &$counts): void
+    private function resolve(array $file, ?array $row, array &$counts, bool $refreshPending = true): void
     {
         $filename = (string) $file['source_filename'];
         $kind = (string) $file['kind'];
@@ -233,8 +233,10 @@ class FamilyMediaReconciler
         $headId = $this->qrControl->headForControl($controlNo);
 
         if ($headId === null) {
-            $this->media->upsertPending($this->pendingFile($file));
-            $counts['pending']++;
+            if ($refreshPending) {
+                $this->media->upsertPending($this->pendingFile($file));
+                $counts['pending']++;
+            }
 
             return;
         }
@@ -267,7 +269,7 @@ class FamilyMediaReconciler
             $this->storage->moveToStore($filename, $headId, $kind);
             $counts['linked']++;
             $this->audit('MEDIA_ADDED', $headId, $kind, $filename);
-        } else {
+        } elseif ($refreshPending) {
             // The mapped member is not a family head, or the link was refused: stay pending.
             $counts['pending']++;
         }
@@ -314,8 +316,6 @@ class FamilyMediaReconciler
                 && (string) ($row['source_modified_at'] ?? '') === $stat['source_modified_at'];
 
             if ($unchanged && $state === FamilyMediaModel::STATE_LINKED) {
-                $this->media->touchSeen($mediaId);
-
                 continue;
             }
 

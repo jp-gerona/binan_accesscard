@@ -115,12 +115,36 @@ final class FamilyProfilePageTest extends CIUnitTestCase
 
         $this->assertStringContainsString('enctype="multipart/form-data"', $html);
         $this->assertStringContainsString('name="head_photo"', $html);
-        $this->assertStringContainsString('accept="image/jpeg"', $html);
+        $this->assertStringContainsString('accept="image/jpeg,image/jpg"', $html);
         $this->assertStringContainsString('name="head_signature"', $html);
         $this->assertStringContainsString('accept="image/png"', $html);
         // Both inputs submit empty when untouched, which is what makes them optional.
         $this->assertMatchesRegularExpression('/<input[^>]*name="head_photo"[^>]*>/', $html);
         $this->assertStringNotContainsString('required', $this->firstMediaInput($html, 'head_photo'));
+    }
+
+    public function testMediaPreviewControlsUseExternalBehaviorAndCss(): void
+    {
+        $html = $this->render();
+        $source = file_get_contents(APPPATH . 'Views/Family/_media_fields.php');
+        $script = file_get_contents(FCPATH . 'assets/js/dashboard/manage-family-modal.js');
+
+        $this->assertStringContainsString('data-family-media-input', $html);
+        $this->assertStringContainsString('data-family-media-clear', $html);
+        $this->assertStringContainsString('family-media-preview', $html);
+        $this->assertIsString($source);
+        $this->assertStringNotContainsString('onchange=', $source);
+        $this->assertStringNotContainsString('onclick=', $source);
+        $this->assertStringNotContainsString('<script>', $source);
+        $this->assertStringNotContainsString('style="', $source);
+        $this->assertStringNotContainsString('id="headPhoto"', $source);
+        $this->assertStringNotContainsString('id="headSignature"', $source);
+        $this->assertStringNotContainsString('id="photoPreview"', $source);
+        $this->assertStringNotContainsString('id="signaturePreview"', $source);
+        $this->assertIsString($script);
+        $this->assertStringContainsString('data-family-media-input', $script);
+        $this->assertStringContainsString('[data-family-media-field]', $script);
+        $this->assertStringContainsString('FileReader', $script);
     }
 
     private function firstMediaInput(string $html, string $name): string

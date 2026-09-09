@@ -3,7 +3,7 @@
 # Registers queue-worker.sh as a cron job that drains the queue on a schedule
 # (macOS/Linux). Mirror of install-cron-worker.ps1.
 #
-#   ./scripts/install-cron-worker.sh                 # every 1 minute (default)
+#   ./scripts/install-cron-worker.sh                 # every 5 minutes (default)
 #   EVERY_MINUTES=5 ./scripts/install-cron-worker.sh # every 5 minutes
 #   AT=01:30 ./scripts/install-cron-worker.sh         # nightly at 01:30 local
 #   ./scripts/install-cron-worker.sh --uninstall      # remove the cron entry
@@ -17,7 +17,7 @@ PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WORKER="$PROJECT_DIR/scripts/queue-worker.sh"
 MARKER="# binan_accesscard queue worker"
 PHP_BIN="${PHP_BIN:-$(command -v php || true)}"
-EVERY_MINUTES="${EVERY_MINUTES:-1}"
+EVERY_MINUTES="${EVERY_MINUTES:-5}"
 AT="${AT:-}"
 
 # Strip any existing entry for this project (idempotent install / uninstall).

@@ -258,6 +258,18 @@ final class FamilyControllerProfileTest extends CIUnitTestCase
         $this->assertStringNotContainsString('019186.photo.jpg', $html);
     }
 
+    public function testProfileMediaUsesCssClassesForLabelsAndImages(): void
+    {
+        $source = file_get_contents(APPPATH . 'Views/Family/profile-view.php');
+
+        $this->assertIsString($source);
+        $this->assertStringContainsString('family-media-label', $source);
+        $this->assertStringContainsString('family-media-image family-media-image-photo', $source);
+        $this->assertStringContainsString('family-media-image family-media-image-signature', $source);
+        $this->assertStringNotContainsString('style="max-height: 200px;', $source);
+        $this->assertStringNotContainsString('style="max-height: 120px;', $source);
+    }
+
     /**
      * Seeds a linked family-media registry row for the profile page to surface.
      * The controller only reads `media_url` for the view, so no file is needed.

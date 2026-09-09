@@ -25,7 +25,8 @@ job.
 `type` to its handler, registered in `app/Config/Queue.php`. Today there is one
 handler: `family_import`, handled by `app/Jobs/FamilyImportJob.php`. Adding a job
 type means writing a handler that implements `JobHandlerInterface` and adding one
-line to the config. `media_reconcile` is another handler. It scans the configured
+line to the config. The retained `media_reconcile` handler drains any legacy rows
+created before direct reconciliation was introduced. It scans the configured
 private family-media folder and updates the media registry; it does not serve a
 page and it does not watch the filesystem.
 
@@ -58,7 +59,8 @@ php spark queue:work --throttle=250
 ## Running it on a schedule
 
 Installs a cron job on macOS and Linux, or a Scheduled Task on Windows, that
-drains every minute. Imports then finish without anyone watching them.
+runs every five minutes by default. Imports then finish without anyone watching
+them.
 
 ```bash
 # macOS and Linux
@@ -75,25 +77,27 @@ PHP_BIN=/opt/local/bin/php ./scripts/install-cron-worker.sh
 # Windows, in an elevated PowerShell
 cd C:\xampp\htdocs\binan_accesscard
 Set-ExecutionPolicy -Scope Process Bypass -Force
-.\scripts\install-cron-worker.ps1 -EveryMinutes 1
+.\scripts\install-cron-worker.ps1 -EveryMinutes 5
 .\scripts\install-cron-worker.ps1 -Uninstall
 ```
 
 The Windows installer registers a task called **BinanQueueWorker** and runs it
-under a dedicated least-privilege service account rather than SYSTEM. That
-account needs read and write access to `writable/` and `writable/uploads/`, plus
-network access to MySQL, and nothing else. The reason for the care is that this
-worker parses untrusted uploaded files.
+as `SYSTEM` so it can operate unattended. In a managed deployment, replace that
+account with a dedicated service account that has read and write access to
+`writable/`, `writable/uploads/`, the configured media root, and MySQL, and
+nothing else. The worker parses untrusted uploaded files, so keep that account
+as limited as the deployment permits.
 
 ## Family-media reconciliation
 
-Every scheduled fire first runs `php spark media:queue-reconcile`, then drains
-the shared queue. The producer keeps at most one `media_reconcile` job pending or
-processing, so one-minute fires do not pile up scans. The job then scans
-`familymediasettings.root` once. This is automatic reconciliation through the
-shared worker, not a reconciliation page and not a filesystem watcher.
+Every scheduled fire first runs `php spark media:reconcile`, then drains the
+shared queue. Reconciliation is direct maintenance work, not a queued job: an
+idle scan creates no `job_queue` row, writes no audit row, and stays out of the
+worker log. The command scans `familymediasettings.root` once and updates the
+registry only when a file needs attention. This is automatic reconciliation, not
+a reconciliation page and not a filesystem watcher.
 
-The folder must be configured before the one-minute worker is installed. The
+The folder must be configured before the scheduled worker is installed. The
 worker account needs read and write access to it in addition to its existing
 `writable/` access. Chapter 06 gives the deployment command and ownership rule;
 chapter 11 gives the filename and correction workflow.
@@ -116,7 +120,7 @@ Nothing is draining the queue. Check in this order.
 3. **Windows laptop on battery?** Scheduled Tasks skip on battery power unless
    configured otherwise. The installer handles this, but a task created any other
    way will not. `scripts/README.md` has the fix.
-4. **Was the machine asleep or off?** Every-minute ticks do not fire then. Drain
+4. **Was the machine asleep or off?** Scheduled ticks do not fire then. Drain
    the backlog by hand once it is awake.
 
 The full worker reference, including the tuning flags, how to add a job type, and

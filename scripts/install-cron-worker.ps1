@@ -4,7 +4,7 @@
 
 .DESCRIPTION
     Run ONCE in an elevated (Administrator) PowerShell. It registers a Scheduled
-    Task that fires queue-worker.ps1 on a schedule (every minute by default); each
+    Task that fires queue-worker.ps1 on a schedule (every five minutes by default); each
     fire drains the job_queue and exits. The task runs as SYSTEM with highest
     privileges, so it works even when no one is logged in -- and because it runs in
     session 0, no console window ever appears on your desktop.
@@ -15,13 +15,13 @@
     Milliseconds paused between chunks -- DB breathing room for other users.
 
 .EXAMPLE
-    # Standard: drain every minute (run as Administrator)
+    # Standard: drain every five minutes (run as Administrator)
     cd C:\xampp\htdocs\binan_accesscard
     Set-ExecutionPolicy -Scope Process Bypass -Force
-    .\scripts\install-cron-worker.ps1 -EveryMinutes 1
+    .\scripts\install-cron-worker.ps1 -EveryMinutes 5
 
 .EXAMPLE
-    # Nightly at 01:30 instead of every minute
+    # Nightly at 01:30 instead of every five minutes
     .\scripts\install-cron-worker.ps1 -At 01:30
 
 .EXAMPLE
@@ -29,7 +29,7 @@
     .\scripts\install-cron-worker.ps1 -Uninstall
 #>
 param(
-    [int]    $EveryMinutes = 1,
+    [int]    $EveryMinutes = 5,
     [string] $At           = '',
     [int]    $Throttle     = 250,
     [int]    $Drainers     = 1,
@@ -82,7 +82,7 @@ if ($LASTEXITCODE -ne 0) {
 
 # schtasks-created tasks inherit Windows' laptop power-gating: "don't start on
 # battery" + "stop when unplugged". On a laptop that silently prevents the
-# every-minute drain whenever it's on battery (jobs sit `pending` -> the UI hangs
+# scheduled drain whenever it's on battery (jobs sit `pending` -> the UI hangs
 # on "waiting for worker"). Clear both and let missed ticks catch up so the worker
 # runs regardless of power state.
 try {

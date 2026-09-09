@@ -8,7 +8,7 @@
 # NOT block or slow interactive users.
 #
 # This is the WORKER. It is invoked on a schedule by the cron entry that
-# install-cron-worker.sh registers (every minute by default). To run it by hand:
+# install-cron-worker.sh registers (every five minutes by default). To run it by hand:
 #     ./scripts/queue-worker.sh                 # drain now, default 250ms throttle
 #     THROTTLE=500 ./scripts/queue-worker.sh    # gentler on the DB
 #
@@ -36,10 +36,9 @@ mkdir -p "$LOG_DIR"
 
 stamp() { date '+%Y-%m-%d %H:%M:%S'; }
 
-# Enqueue a single media reconciliation run before draining the shared queue. The
-# producer's lock plus JobQueueModel::enqueueIfNoActive prevents overlapping
-# scheduler fires from stacking jobs; exit code is always successful here.
-reconcile_output="$("$PHP_BIN" "$PROJECT_DIR/spark" media:queue-reconcile 2>&1 || true)"
+# Reconcile direct filesystem maintenance before draining user-requested jobs.
+# This avoids adding an idle terminal row to job_queue on every scheduler fire.
+reconcile_output="$("$PHP_BIN" "$PROJECT_DIR/spark" media:reconcile 2>&1 || true)"
 
 if [ -n "${reconcile_output// }" ]; then
     printf '[%s] %s\n' "$(stamp)" "$reconcile_output" >> "$LOG_FILE"

@@ -22,7 +22,7 @@ final class ImportReviewQueryTest extends CIUnitTestCase
         $this->assertSame(1, $query->page);
         $this->assertSame(25, $query->per);
         $this->assertSame('all', $query->severity);
-        $this->assertSame('', $query->code);
+        $this->assertSame([], $query->code);
         $this->assertSame('', $query->q);
         $this->assertSame(0, $query->offset());
     }
@@ -61,11 +61,14 @@ final class ImportReviewQueryTest extends CIUnitTestCase
         $this->assertSame('problems', ImportReviewQuery::fromArray(['severity' => 'problems'])->severity);
     }
 
-    public function testItTrimsTheSearchAndTheCode(): void
+    public function testItTrimsTheSearchAndEveryCode(): void
     {
-        $query = ImportReviewQuery::fromArray(['q' => '  cruz  ', 'code' => ' SEX ']);
+        $query = ImportReviewQuery::fromArray([
+            'q' => '  cruz  ',
+            'code' => [' SEX ', '', ' AGE-ELIG '],
+        ]);
 
         $this->assertSame('cruz', $query->q);
-        $this->assertSame('SEX', $query->code);
+        $this->assertSame(['SEX', 'AGE-ELIG'], $query->code);
     }
 }

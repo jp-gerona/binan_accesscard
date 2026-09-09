@@ -140,12 +140,12 @@ A card replacement never moves it: the QR number is read only at intake, and a
 retired number never resolves again, so a folder belongs to one family for the
 life of the record.
 
-The one-minute scheduled worker queues and performs this reconciliation
-automatically. There is no page to press and no filesystem watcher to install.
+The five-minute scheduled worker performs this reconciliation directly,
+without adding a queue row. There is no page to press and no filesystem watcher to install.
 The worker scans the inbox, records only valid canonical image files, and leaves
 invalid drops in the inbox for staff to correct. A file whose name or format is
 wrong simply stays where it was dropped, nothing appears on any profile, and the
-worker log names the file and why it was rejected. Correct the filename, format,
+worker log reports the invalid-file count. Correct the filename, format,
 dimensions, or size in place and let the next scan inspect it again.
 
 Replace a portrait by dropping the same QR-named file into the inbox again; the

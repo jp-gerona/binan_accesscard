@@ -89,7 +89,7 @@ group set by the setgid directory above. The storage boundary writes uploaded
 and accepted files at group-readable `0640`, so the worker account can read
 what the web account saved. Keep the folder outside anything the web server
 serves directly. Restart the PHP service after changing group membership, then
-install the worker at its default one-minute schedule as described in chapter
+install the worker at its default five-minute schedule as described in chapter
 05.
 
 The database account needs `SELECT`, `INSERT`, `UPDATE`, and `DELETE` on the
@@ -173,12 +173,13 @@ Test a restore before you need one. A backup nobody has restored is a hypothesis
 Chapter 05 has the scripts and the installation commands. The operational points
 for a deployment:
 
-- The worker must be running, on a schedule, for imports to complete. Every
-  minute is the default and is fine.
-- Run it as a dedicated least-privilege account, not as SYSTEM or root. It needs
-  read and write on `writable/`, `writable/uploads/`, and the configured private
-  `MEDIA_ROOT`, plus network access to MySQL. Nothing else. It parses untrusted
-  uploaded files, which is the whole reason for the constraint.
+- The worker must be running, on a schedule, for imports to complete. Five
+  minutes is the default.
+- The included Windows installer runs as `SYSTEM` for unattended execution. In
+  a managed deployment, replace it with a dedicated least-privilege account. It
+  needs read and write on `writable/`, `writable/uploads/`, and the configured
+  private `MEDIA_ROOT`, plus network access to MySQL. Nothing else. It parses
+  untrusted uploaded files, which is the reason for the constraint.
 - Its log is `writable/logs/queue-worker.log`. If imports stop completing, read it
   first.
 - On a Windows laptop, Scheduled Tasks skip while on battery unless configured

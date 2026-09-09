@@ -246,6 +246,38 @@ final class FamilyMediaReconcilerTest extends CIUnitTestCase
         $this->assertSame($headId, (int) $this->mediaModel->findBySourceFilename('019191.photo.jpg')['headID']);
     }
 
+    public function testDirectUnchangedScanDoesNotWriteLastSeenAt(): void
+    {
+        $headId = $this->seedHeadWithControl(191200);
+        $this->writeJpeg('191200.photo.jpg', 100, 100);
+        $this->reconciler()->run($this->reporter());
+        db_connect()->table('family_media')
+            ->where('headID', $headId)
+            ->where('kind', 'photo')
+            ->update(['last_seen_at' => '2000-01-01 00:00:00']);
+
+        $this->reconciler()->run();
+
+        $row = $this->mediaModel->findBySourceFilename('191200.photo.jpg');
+        $this->assertSame('2000-01-01 00:00:00', $row['last_seen_at']);
+    }
+
+    public function testDirectUnchangedPendingScanDoesNotWriteOrReportWork(): void
+    {
+        $this->writeJpeg('191201.photo.jpg', 100, 100);
+        $this->reconciler()->run($this->reporter());
+        db_connect()->table('family_media')
+            ->where('source_filename', '191201.photo.jpg')
+            ->update(['last_seen_at' => '2000-01-01 00:00:00']);
+
+        $counts = $this->reconciler()->run();
+        $row = $this->mediaModel->findBySourceFilename('191201.photo.jpg');
+
+        $this->assertSame(1, $counts['seen']);
+        $this->assertSame(0, $counts['pending']);
+        $this->assertSame('2000-01-01 00:00:00', $row['last_seen_at']);
+    }
+
     public function testEveryLinkedMutationHasOneSystemAuditRow(): void
     {
         $headId = $this->seedHeadWithControl(19192);

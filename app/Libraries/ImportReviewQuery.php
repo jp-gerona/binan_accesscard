@@ -34,8 +34,12 @@ final class ImportReviewQuery
         $per = (int) ($query['per'] ?? 0);
         $code = $query['code'] ?? [];
         if (is_string($code)) {
-            $code = array_filter(array_map('trim', explode(',', $code)));
+            $code = explode(',', $code);
         }
+        $code = array_values(array_filter(
+            array_map(static fn (mixed $value): string => trim((string) $value), (array) $code),
+            static fn (string $value): bool => $value !== '',
+        ));
 
         return new self(
             max(1, (int) ($query['page'] ?? 1)),
@@ -43,7 +47,7 @@ final class ImportReviewQuery
             in_array((string) ($query['severity'] ?? ''), self::SEVERITIES, true)
                 ? (string) $query['severity']
                 : 'all',
-            array_filter(array_map('strval', (array) $code)),
+            $code,
             trim((string) ($query['q'] ?? '')),
         );
     }

@@ -42,6 +42,67 @@
         }
     }
 
+    function updateMediaPreview(input) {
+        var field = input.closest('[data-family-media-field]');
+        var preview = field ? field.querySelector('[data-family-media-preview]') : null;
+
+        if (!preview) {
+            return;
+        }
+
+        if (!input.files || !input.files[0]) {
+            preview.removeAttribute('src');
+            preview.classList.add('d-none');
+            return;
+        }
+
+        var reader = new window.FileReader();
+
+        reader.onload = function (event) {
+            if (!input.isConnected || !preview.isConnected) {
+                return;
+            }
+
+            preview.setAttribute('src', String(event.target.result));
+            preview.classList.remove('d-none');
+        };
+        reader.readAsDataURL(input.files[0]);
+    }
+
+    function initMediaPreviewControls(root) {
+        root.addEventListener('change', function (event) {
+            var input = event.target;
+
+            if (input && input.matches('[data-family-media-input]')) {
+                updateMediaPreview(input);
+            }
+        });
+
+        root.addEventListener('click', function (event) {
+            var button = event.target.closest('[data-family-media-clear]');
+
+            if (!button) {
+                return;
+            }
+
+            var field = button.closest('[data-family-media-field]');
+            var input = field ? field.querySelector('[data-family-media-input]') : null;
+
+            if (!input) {
+                return;
+            }
+
+            input.value = '';
+            updateMediaPreview(input);
+        });
+    }
+
+    function refreshMediaPreviews(root) {
+        Array.from(root.querySelectorAll('[data-family-media-input]')).forEach(function (input) {
+            updateMediaPreview(input);
+        });
+    }
+
     // ---- "Other" freetext selects -----------------------------------------
 
     function isOtherValue(value) {
@@ -1785,6 +1846,7 @@
         root.dataset.familyEntryReady = '1';
 
         bindUppercaseTyping(root);
+        initMediaPreviewControls(root);
 
         var formEl = root.querySelector('form');
 
@@ -1891,6 +1953,7 @@
                     // "Keep" re-checks asynchronously, after the sync refresh below already ran.
                     refreshServiceCategories(target.closest('[data-family-member-row]') || root);
                     refreshAllChoicesSummaries(root);
+                    refreshMediaPreviews(root);
                     renumberMembers(root);
                     scheduleSave(root);
                 });
