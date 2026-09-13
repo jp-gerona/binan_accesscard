@@ -477,7 +477,7 @@ class DashboardPageBuilder
 
         $response = service('response');
         $response->setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-        $response->setHeader('Content-Disposition', 'attachment; filename="data-completeness-' . date('Y-m-d') . '.xlsx"');
+        $response->setHeader('Content-Disposition', 'attachment; filename="card-readiness-' . date('Y-m-d') . '.xlsx"');
 
         ob_start();
         (new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet))->save('php://output');

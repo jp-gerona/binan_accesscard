@@ -80,6 +80,16 @@ final class DataCompletenessPageTest extends CIUnitTestCase
         $this->assertStringNotContainsString('<?= $', $table);
     }
 
+    public function testCardReadinessDownloadUsesTheCardReadinessFilename(): void
+    {
+        $response = $this->builder()->completenessDownloadResponse();
+
+        $this->assertSame(
+            'attachment; filename="card-readiness-' . date('Y-m-d') . '.xlsx"',
+            $response->getHeaderLine('Content-Disposition'),
+        );
+    }
+
     private function builder(): DashboardPageBuilder
     {
         return new DashboardPageBuilder(service('request'));

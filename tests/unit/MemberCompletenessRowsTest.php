@@ -116,4 +116,35 @@ final class MemberCompletenessRowsTest extends CIUnitTestCase
         $this->assertSame(['First Name', 'Last Name'], $rows[0]['missing']);
         $this->assertSame(['Barangay'], $rows[1]['missing']);
     }
+
+    public function testMalformedLegacyCardValuesRemainInTheReadinessQueue(): void
+    {
+        $db = db_connect();
+        $db->table('barangay')->insert(['barangayID' => 1, 'name' => 'SANTO TOMAS']);
+        ReferentialFixture::heads($db, [1, 2, 3, 4, 5]);
+        ReferentialFixture::cards($db, [1, 2, 3, 4, 5], 6300);
+
+        $complete = [
+            'firstname' => 'JUAN', 'lastname' => 'CRUZ', 'sex' => 'MALE',
+            'birthday' => '1990-01-01', 'address' => 'SAMPLE STREET',
+            'contactnumber' => '09171234567', 'barangayID' => 1,
+        ];
+        foreach ([1, 2, 3, 4, 5] as $id) {
+            $db->table('member')->update($complete, ['memberID' => $id]);
+        }
+        $db->table('member')->update(['contactnumber' => 'not-a-number'], ['memberID' => 1]);
+        $db->table('member')->update(['sex' => 'UNKNOWN'], ['memberID' => 2]);
+        $db->table('member')->update(['birthday' => (new \DateTimeImmutable('tomorrow'))->format('Y-m-d')], ['memberID' => 3]);
+        $db->table('member')->update(['firstname' => ''], ['memberID' => 4]);
+        $db->table('qr_control')->update(['control_no' => 0], ['control_no' => 6305]);
+
+        $rows = (new MemberModel())->cardReadinessRows();
+
+        $this->assertSame([5, 1, 2, 3, 4], array_map('intval', array_column($rows, 'memberID')));
+        $this->assertSame(['Control Number'], $rows[0]['missing']);
+        $this->assertSame(['Contact Number'], $rows[1]['missing']);
+        $this->assertSame(['Sex'], $rows[2]['missing']);
+        $this->assertSame(['Birthday'], $rows[3]['missing']);
+        $this->assertSame(['First Name'], $rows[4]['missing']);
+    }
 }

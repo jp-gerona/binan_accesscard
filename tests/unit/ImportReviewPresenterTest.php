@@ -364,7 +364,7 @@ final class ImportReviewPresenterTest extends CIUnitTestCase
         sort($labels);
 
         $this->assertSame([
-            'Missing Birthday',
+            'Card Readiness: Missing Birthday',
             'Missing FirstName',
             'Missing Income',
             'Missing LastName',
@@ -372,7 +372,7 @@ final class ImportReviewPresenterTest extends CIUnitTestCase
 
         $filterLabels = array_column((new ImportReviewPresenter())->build($result)['codes'], 'label', 'code');
         $this->assertSame('Missing FirstName, Missing LastName', $filterLabels['REQUIRED']);
-        $this->assertSame('Missing Birthday, Missing Income', $filterLabels['INCOMPLETE']);
+        $this->assertSame('Card Readiness: Missing Birthday, Missing Income', $filterLabels['INCOMPLETE']);
     }
 
     public function testIssuesCarryTheirExcelCellReference(): void
@@ -410,8 +410,8 @@ final class ImportReviewPresenterTest extends CIUnitTestCase
 
         $codes = array_column((new ImportReviewPresenter())->build($result)['codes'], 'label', 'code');
 
-        $this->assertSame('Future birthday (imports blank)', $codes['BDAY-FUTURE']);
-        $this->assertSame('Missing Birthday', $codes['INCOMPLETE']);
+        $this->assertSame('Card Readiness: Future birthday', $codes['BDAY-FUTURE']);
+        $this->assertSame('Card Readiness: Missing Birthday', $codes['INCOMPLETE']);
         $this->assertSame('Invalid Sector Code', $codes['SECTOR']);
     }
 

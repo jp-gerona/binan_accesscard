@@ -72,7 +72,7 @@ class FamilyExcelImporter
      * QRs already in the DB, with the head stored under each - NOT just a name: the review
      * has to check the incoming head IS that person before it can call a group a duplicate.
      *
-     * @var array<int, array{headID: int, name: string, record: array<string, string|null>}>
+     * @var array<int, array{headID: int, name: string, record: array<string, string|int|null>}>
      */
     private array $existingHeads = [];
 
@@ -440,7 +440,7 @@ class FamilyExcelImporter
      * Bulk queries; safe when the tables are absent.
      *
      * @param list<array{sheetRow: int|string, data: array<string,string>}> $rows
-     * @return array<int, array{headID: int, name: string, record: array<string, string|null>}>
+     * @return array<int, array{headID: int, name: string, record: array<string, string|int|null>}>
      */
     public function existingHeadsForRows(array $rows): array
     {
@@ -545,10 +545,14 @@ class FamilyExcelImporter
      *
      * @param list<array{row: int, data: array<string, string>}> $rows
      */
-    private function collectAppends(string $familyNo, string $headName, array $rows, array $sectorByCode, array $serviceByCode, array $incomeByLabel): void
+    private function collectAppends(string $familyNo, string $headName, array $storedHead, array $rows, array $sectorByCode, array $serviceByCode, array $incomeByLabel): void
     {
         foreach ($rows as $entry) {
             $payload    = $this->buildPersonPayload($entry, $familyNo, false, $sectorByCode, $incomeByLabel);
+            // Existing households own their address and barangay. These source cells are
+            // member detail, not permission to overwrite or split a stored household.
+            $payload['address'] = $storedHead['address'] ?? null;
+            $payload['barangayID'] = $storedHead['barangayID'] ?? null;
             $serviceIds = $this->mapServices($entry, $familyNo, $serviceByCode);
 
             $this->validateAgeEligibility(
@@ -897,7 +901,15 @@ class FamilyExcelImporter
         // that existing family (the worker's forgotten-member-next-batch case). Instead of
         // HEAD-NONE, surface each as an append the operator confirms or removes.
         if (count($heads) === 0 && $existsInDb) {
-            $this->collectAppends($familyNo, $existingHeadName, $rows, $sectorByCode, $serviceByCode, $incomeByLabel);
+            $this->collectAppends(
+                $familyNo,
+                $existingHeadName,
+                is_array($existing['record'] ?? null) ? $existing['record'] : [],
+                $rows,
+                $sectorByCode,
+                $serviceByCode,
+                $incomeByLabel,
+            );
 
             return;
         }
@@ -995,7 +1007,8 @@ class FamilyExcelImporter
     /**
      * Distinguishes a separate household sharing a QR from a harmless separated
      * continuation. A multiple-head error is local to one contiguous block; heads in
-     * different blocks only conflict when every block has one and their identities differ.
+     * different blocks may join only when every Head identity component is present and
+     * exactly matches. Missing proof is ambiguous, so it blocks instead of guessing.
      *
      * @param list<list<array{row: int, data: array<string, string>}>> $blocks
      */
@@ -1024,42 +1037,46 @@ class FamilyExcelImporter
             return $hasBlockingIssue;
         }
 
-        // A different-family conflict is provable only when every separated block has
-        // exactly one head. A headless block can be a continuation of the preceding one.
-        if (count($singleHeads) === count($blocks)) {
-            $identities = [];
+        $identities = [];
 
-            foreach ($singleHeads as $item) {
-                $data = $item['head']['data'];
-                $identities[] = implode('|', [
-                    $this->normalizeText((string) ($data['firstname'] ?? '')),
-                    $this->normalizeText((string) ($data['lastname'] ?? '')),
-                    (string) $this->normalizeBirthday((string) ($data['birthday'] ?? '')),
-                ]);
+        foreach ($blocks as $block) {
+            $heads = array_values(array_filter($block, static fn (array $entry): bool =>
+                strcasecmp(trim((string) ($entry['data']['relationship'] ?? '')), 'Head') === 0
+            ));
+            $data = count($heads) === 1 ? $heads[0]['data'] : [];
+            $identity = [
+                $this->normalizeText((string) ($data['firstname'] ?? '')),
+                $this->normalizeText((string) ($data['middlename'] ?? '')),
+                $this->normalizeText((string) ($data['lastname'] ?? '')),
+                $this->normalizeText(str_replace('.', '', (string) ($data['suffix'] ?? ''))),
+                $this->normalizeBirthday((string) ($data['birthday'] ?? '')),
+            ];
+
+            if (count($heads) !== 1 || in_array('', $identity, true) || in_array(null, $identity, true)) {
+                $identities[] = null;
+                continue;
             }
 
-            if (count(array_unique($identities)) > 1) {
-                $descriptions = [];
-
-                foreach ($singleHeads as $item) {
-                    $block = $item['block'];
-                    $range = (int) $block[0]['row'] . '-' . (int) $block[array_key_last($block)]['row'];
-                    $name = $this->personName($item['head']['data']) ?: 'an unnamed Head';
-                    $descriptions[] = 'rows ' . $range . ' (headed by ' . $name . ')';
-                }
-
-                foreach ($singleHeads as $item) {
-                    $this->addError((int) $item['head']['row'], $familyNo, 'DUP-QR-FAMILY', 'familyno',
-                        'QR ' . $familyNo . ' is used by separate family blocks: ' . implode(' and ', $descriptions)
-                        . '. Give each family its own QR Number.');
-                }
-
-                return true;
-            }
+            $identities[] = implode('|', $identity);
         }
 
-        // Blank rows do not split blocks; reaching here means another populated QR block
-        // did. It is safe only because the blocks did not prove different families.
+        if (in_array(null, $identities, true) || count(array_unique($identities)) > 1) {
+            $descriptions = [];
+
+            foreach ($blocks as $block) {
+                $range = (int) $block[0]['row'] . '-' . (int) $block[array_key_last($block)]['row'];
+                $descriptions[] = 'rows ' . $range;
+            }
+
+            foreach ($blocks as $block) {
+                $this->addError((int) $block[0]['row'], $familyNo, 'DUP-QR-FAMILY', 'familyno',
+                    'QR ' . $familyNo . ' is used by separate family blocks (' . implode(' and ', $descriptions)
+                    . '). Each block must have one Head with the same complete name, suffix, and birthday. Give each family its own QR Number.');
+            }
+
+            return true;
+        }
+
         $this->addError((int) $blocks[0][0]['row'], $familyNo, 'QR-CONTIG', 'familyno',
             'Family ' . $familyNo . ' rows are not next to each other. This can happen after sorting or pasting - check the grouping.', 'warning');
 

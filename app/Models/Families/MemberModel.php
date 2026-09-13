@@ -7,6 +7,7 @@ use App\Models\Concerns\MemberQueryFilters;
 use App\Models\Concerns\NormalizesIds;
 use App\Models\Concerns\RecordStatus;
 use App\Models\Concerns\ResolvesSectorNames;
+use App\Support\ContactNumber;
 use App\Support\MemberFieldNormalizer;
 use CodeIgniter\Model;
 
@@ -194,7 +195,7 @@ class MemberModel extends Model
 
         foreach (array_chunk($headIds, 1000) as $chunk) {
             $rows = $this->db->table($this->table)
-                ->select('memberID, firstname, middlename, lastname, suffix, birthday, sex, civilstatus, contactnumber, religion, address')
+                ->select('memberID, firstname, middlename, lastname, suffix, birthday, sex, civilstatus, contactnumber, religion, address, barangayID')
                 ->where($member . '.memberID = ' . $member . '.headID', null, false)
                 ->whereIn('memberID', $chunk)
                 ->get()
@@ -583,19 +584,34 @@ class MemberModel extends Model
 
         return array_values(array_filter(array_map(static function (array $row): array {
             $missing = [];
-            foreach ([
-                'control_no'    => 'Control Number',
-                'firstname'     => 'First Name',
-                'lastname'      => 'Last Name',
-                'sex'           => 'Sex',
-                'birthday'      => 'Birthday',
-                'address'       => 'Address',
-                'contactnumber' => 'Contact Number',
-                'barangay'      => 'Barangay',
-            ] as $field => $label) {
-                if (trim((string) ($row[$field] ?? '')) === '') {
-                    $missing[] = $label;
-                }
+            $controlNo = trim((string) ($row['control_no'] ?? ''));
+            $birthday = trim((string) ($row['birthday'] ?? ''));
+            $birthdayDate = \DateTimeImmutable::createFromFormat('!Y-m-d', $birthday);
+            $contact = ContactNumber::parse($row['contactnumber'] ?? null);
+
+            if (preg_match('/^[1-9]\d{0,6}$/', $controlNo) !== 1) {
+                $missing[] = 'Control Number';
+            }
+            if (trim((string) ($row['firstname'] ?? '')) === '') {
+                $missing[] = 'First Name';
+            }
+            if (trim((string) ($row['lastname'] ?? '')) === '') {
+                $missing[] = 'Last Name';
+            }
+            if (! in_array((string) ($row['sex'] ?? ''), ['MALE', 'FEMALE'], true)) {
+                $missing[] = 'Sex';
+            }
+            if ($birthdayDate === false || $birthdayDate->format('Y-m-d') !== $birthday || $birthdayDate > new \DateTimeImmutable('today')) {
+                $missing[] = 'Birthday';
+            }
+            if (trim((string) ($row['address'] ?? '')) === '') {
+                $missing[] = 'Address';
+            }
+            if (! $contact['supplied'] || ! $contact['valid']) {
+                $missing[] = 'Contact Number';
+            }
+            if (trim((string) ($row['barangay'] ?? '')) === '') {
+                $missing[] = 'Barangay';
             }
 
             $row['missing'] = $missing;

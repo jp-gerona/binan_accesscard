@@ -269,7 +269,7 @@ final class FamilyExcelImporterTest extends CIUnitTestCase
         $this->assertNotContains('QR-CONTIG', $this->codes($result));
     }
 
-    public function testAnotherFamilyInterleavedStillWarns(): void
+    public function testAnotherFamilyInterleavedWithAnIncompleteContinuationIsBlocked(): void
     {
         $result = $this->importer()->validateAndBuild([
             $this->headRow(3, '6001'),
@@ -277,14 +277,11 @@ final class FamilyExcelImporterTest extends CIUnitTestCase
             $this->memberRow(5, '6001'),
         ]);
 
-        $contig = array_values(array_filter(
-            $result['errors'],
-            static fn (array $e): bool => $e['code'] === 'QR-CONTIG'
-        ));
+        $conflicts = $this->errorsFor($result, 'DUP-QR-FAMILY');
 
-        $this->assertCount(1, $contig);
-        $this->assertSame('warning', $contig[0]['severity']);
-        $this->assertSame('6001', (string) $contig[0]['familyNo']);
+        $this->assertCount(2, $conflicts);
+        $this->assertSame(['blocking', 'blocking'], array_column($conflicts, 'severity'));
+        $this->assertSame(['6001', '6001'], array_map(static fn (array $error): string => (string) $error['familyNo'], $conflicts));
     }
 
     // -- barangay / contact / suffix / duplicate-person ----------------------
@@ -721,9 +718,9 @@ final class FamilyExcelImporterTest extends CIUnitTestCase
     public function testContiguityWarningAllowsASeparatedSameHeadContinuation(): void
     {
         $result = $this->importer()->validateAndBuild([
-            $this->headRow(3, '6001'),
+            $this->headRow(3, '6001', ['middlename' => 'SANTOS', 'suffix' => 'JR']),
             $this->headRow(4, '6002'),
-            $this->headRow(5, '6001'),
+            $this->headRow(5, '6001', ['middlename' => 'SANTOS', 'suffix' => 'JR']),
         ]);
 
         $this->assertSame(['QR-CONTIG'], array_values(array_filter(
@@ -731,6 +728,35 @@ final class FamilyExcelImporterTest extends CIUnitTestCase
             static fn (string $code): bool => in_array($code, ['QR-CONTIG', 'DUP-QR-FAMILY', 'HEAD-MULTI'], true),
         )));
         $this->assertSame('warning', $this->errorsFor($result, 'QR-CONTIG')[0]['severity']);
+    }
+
+    public function testSeparatedBlocksWithDifferentMiddleOrSuffixAreBlocked(): void
+    {
+        $differentMiddle = $this->importer()->validateAndBuild([
+            $this->headRow(3, '6001', ['middlename' => 'SANTOS', 'suffix' => 'JR']),
+            $this->headRow(4, '6002'),
+            $this->headRow(5, '6001', ['middlename' => 'REYES', 'suffix' => 'JR']),
+        ]);
+        $differentSuffix = $this->importer()->validateAndBuild([
+            $this->headRow(3, '6001', ['middlename' => 'SANTOS', 'suffix' => 'JR']),
+            $this->headRow(4, '6002'),
+            $this->headRow(5, '6001', ['middlename' => 'SANTOS', 'suffix' => 'SR']),
+        ]);
+
+        $this->assertCount(2, $this->errorsFor($differentMiddle, 'DUP-QR-FAMILY'));
+        $this->assertCount(2, $this->errorsFor($differentSuffix, 'DUP-QR-FAMILY'));
+    }
+
+    public function testSeparatedBlocksWithIncompleteHeadIdentityAreBlocked(): void
+    {
+        $result = $this->importer()->validateAndBuild([
+            $this->headRow(3, '6001', ['middlename' => 'SANTOS']),
+            $this->headRow(4, '6002'),
+            $this->headRow(5, '6001', ['middlename' => '']),
+        ]);
+
+        $this->assertCount(2, $this->errorsFor($result, 'DUP-QR-FAMILY'));
+        $this->assertSame([], $this->errorsFor($result, 'QR-CONTIG'));
     }
 
     public function testTwoHeadsInOneContiguousBlockAreOnlyHeadMulti(): void
@@ -814,6 +840,25 @@ final class FamilyExcelImporterTest extends CIUnitTestCase
         $this->assertStringContainsString('will be ADDED', $add[0]['message']);
         $this->assertStringContainsString('delete this row', $add[0]['message']);
         $this->assertSame(1, $result['counts']['appends']);
+    }
+
+    public function testAppendUsesTheStoredHeadHouseholdValuesInsteadOfMemberCells(): void
+    {
+        $result = $this->importer()->validateAndBuild(
+            [$this->memberRow(3, '6001', [
+                'address' => '999 SOURCE STREET',
+                'barangay' => 'SOURCE BARANGAY',
+            ])],
+            $this->existingHead(6001, $this->storedHead([
+                'address' => '100 STORED STREET',
+                'barangayID' => 24,
+            ])),
+        );
+
+        $payload = $result['appends'][0]['payload'];
+
+        $this->assertSame('100 STORED STREET', $payload['address']);
+        $this->assertSame(24, $payload['barangayID']);
     }
 
     // -- "already in the system" must be the SAME person, 1:1 -------------------
@@ -1189,7 +1234,7 @@ final class FamilyExcelImporterTest extends CIUnitTestCase
      * write, so the fixture can't drift from the real normalisation (name cleaning, birthday
      * to Y-m-d, address+barangay combined).
      *
-     * @param array<string, string|null> $overrides
+     * @param array<string, string|int|null> $overrides
      */
     private function storedHead(array $overrides = []): array
     {
@@ -1201,7 +1246,7 @@ final class FamilyExcelImporterTest extends CIUnitTestCase
     /**
      * [qr => stored head] - the shape existingHeadsForRows() returns.
      *
-     * @param array<string, string|null> $record
+     * @param array<string, string|int|null> $record
      */
     private function existingHead(int $qr, array $record): array
     {

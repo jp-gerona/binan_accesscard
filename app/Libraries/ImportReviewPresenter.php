@@ -41,9 +41,9 @@ class ImportReviewPresenter
         'HEAD-MULTI' => ['label' => 'Multiple Heads (Same Family)', 'hint' => 'Only one person per family can be the Head.'],
         'FP-ADDR'    => ['label' => 'Multiple Addresses in Family', 'hint' => 'One QR = one household. Fix the mistyped QR, or give the other household its own QR.'],
         'REQUIRED'   => ['label' => 'Missing required value',      'hint' => 'Fill in the cell.'],
-        'INCOMPLETE' => ['label' => 'Missing value (imports blank)', 'hint' => 'Blank cells import as blank. The family is listed on the Data Completeness report until the data is collected.'],
-        'BDAY'       => ['label' => 'Invalid birthday',            'hint' => 'Could not be read; imports with a blank birthday. The family is listed on the Data Completeness report.'],
-        'SEX'        => ['label' => 'Invalid sex',                 'hint' => 'Not Male or Female; imports with no sex. The family is listed on the Data Completeness report.'],
+        'INCOMPLETE' => ['label' => 'Card Readiness: Missing value', 'hint' => 'Warning only: the blank value imports and the Head appears in Card Readiness until it is collected.'],
+        'BDAY'       => ['label' => 'Card Readiness: Invalid birthday', 'hint' => 'Warning only: the unreadable value imports blank and the Head appears in Card Readiness.'],
+        'SEX'        => ['label' => 'Card Readiness: Invalid sex', 'hint' => 'Warning only: not Male or Female, so the Head imports with no sex and appears in Card Readiness.'],
         'INCOME'     => ['label' => 'Invalid monthly income',      'hint' => 'Not a bracket or readable amount; imports with no income. The family is listed on the Data Completeness report.'],
         'SERVICE'    => ['label' => 'Invalid Service Code',        'hint' => 'The code is not on the Reference sheet. Choose a listed service code before importing.'],
         'LENGTH'     => ['label' => 'Value too long',              'hint' => 'Shorten it to fit the database limit.'],
@@ -55,12 +55,12 @@ class ImportReviewPresenter
         'DUP-PERSON' => ['label' => 'Possible duplicate person',   'hint' => 'Same name, birthday and address as another row. Imports anyway - delete a row if it really is a duplicate.'],
         'DUP-ROW'    => ['label' => 'Duplicate Row',               'hint' => 'Choose the one complete duplicate row to keep.'],
         'DUP-QR-FAMILY' => ['label' => 'Duplicate QR (Multiple Families)', 'hint' => 'Correct the QR number for the second household.'],
-        'BRGY'       => ['label' => 'Barangay not recognised',     'hint' => 'Not an official Biñan barangay; imports with no barangay. The family is listed on the Data Completeness report.'],
+        'BRGY'       => ['label' => 'Card Readiness: Barangay not recognised', 'hint' => 'Warning only: not an official Biñan barangay, so the Head imports with no barangay and appears in Card Readiness.'],
         'SECTOR'     => ['label' => 'Invalid Sector Code',         'hint' => 'The code is not on the Reference sheet. Choose a listed sector code before importing.'],
-        'CONTACT'    => ['label' => 'Contact number format',       'hint' => 'Should start with 09 and be 11 digits. Imports as typed.'],
+        'CONTACT'    => ['label' => 'Invalid contact number',      'hint' => 'Must fix: enter a valid mobile or Biñan landline number before importing.'],
         'SUFFIX'     => ['label' => 'Suffix adjusted',             'hint' => 'Changed to the matching dropdown value, or left blank if it matches none.'],
         'BDAY-RANGE' => ['label' => 'Birthday out of range',       'hint' => 'Over 150 years ago. Imports as typed.'],
-        'BDAY-FUTURE' => ['label' => 'Future birthday (imports blank)', 'hint' => 'A future date cannot be stored; the birthday imports blank and the family is listed on the Data Completeness report.'],
+        'BDAY-FUTURE' => ['label' => 'Card Readiness: Future birthday', 'hint' => 'Warning only: a future date imports blank and the Head appears in Card Readiness.'],
         'QR-CONTIG'  => ['label' => 'Family rows not together',    'hint' => 'Warning only - the family imports, but check the grouping.'],
     ];
 
@@ -513,7 +513,9 @@ class ImportReviewPresenter
                 ? 'Income'
                 : (self::FIELD_LABELS[$field] ?? 'value');
 
-            return 'Missing ' . $fieldLabel;
+            $isCardReadinessField = in_array($field, ['birthday', 'sex', 'address', 'contactnumber', 'barangay'], true);
+
+            return ($code === 'INCOMPLETE' && $isCardReadinessField ? 'Card Readiness: Missing ' : 'Missing ') . $fieldLabel;
         }
 
         return self::GROUPS[$code]['label'] ?? $code;
