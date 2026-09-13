@@ -44,7 +44,7 @@ class ImportReviewPresenter
         'INCOMPLETE' => ['label' => 'Card Readiness: Missing value', 'hint' => 'Warning only: the blank value imports and the Head appears in Card Readiness until it is collected.'],
         'BDAY'       => ['label' => 'Card Readiness: Invalid birthday', 'hint' => 'Warning only: the unreadable value imports blank and the Head appears in Card Readiness.'],
         'SEX'        => ['label' => 'Card Readiness: Invalid sex', 'hint' => 'Warning only: not Male or Female, so the Head imports with no sex and appears in Card Readiness.'],
-        'INCOME'     => ['label' => 'Invalid monthly income',      'hint' => 'Not a bracket or readable amount; imports with no income. The family is listed on the Data Completeness report.'],
+        'INCOME'     => ['label' => 'Invalid monthly income',      'hint' => 'Warning only: correct it if the income is known.'],
         'SERVICE'    => ['label' => 'Invalid Service Code',        'hint' => 'The code is not on the Reference sheet. Choose a listed service code before importing.'],
         'LENGTH'     => ['label' => 'Value too long',              'hint' => 'Shorten it to fit the database limit.'],
         'AGE-ELIG'   => ['label' => 'Age eligibility mismatch',    'hint' => 'The person\'s age does not qualify for their assigned sector or service.'],

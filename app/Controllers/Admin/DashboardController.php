@@ -65,8 +65,8 @@ class DashboardController extends BaseController
     }
 
     /**
-     * GET `records/completeness`. The Data Completeness work queue: families
-     * whose records imported (or were entered) with blank profile fields.
+     * GET `records/completeness`. The Card Readiness work queue: active Heads
+     * whose required access-card data needs follow-up.
      */
     public function dataCompleteness(): string
     {

@@ -1015,7 +1015,6 @@ class FamilyExcelImporter
     private function checkQrBlocks(string $familyNo, array $blocks): bool
     {
         $hasBlockingIssue = false;
-        $singleHeads = [];
 
         foreach ($blocks as $block) {
             $heads = array_values(array_filter($block, static fn (array $entry): bool =>
@@ -1028,9 +1027,6 @@ class FamilyExcelImporter
                 $hasBlockingIssue = true;
             }
 
-            if (count($heads) === 1) {
-                $singleHeads[] = ['head' => $heads[0], 'block' => $block];
-            }
         }
 
         if (count($blocks) < 2) {
@@ -1372,8 +1368,7 @@ class FamilyExcelImporter
         }
 
         $this->addError($row, $familyNo, 'INCOME', 'monthlyincome',
-            'Monthly income "' . $value . '" could not be read as a bracket or amount - imports with no income.'
-            . ' The family is listed on the Data Completeness report.', 'warning');
+            'Monthly income "' . $value . '" could not be read as a bracket or amount. Correct it if the income is known.', 'warning');
 
         return null;
     }

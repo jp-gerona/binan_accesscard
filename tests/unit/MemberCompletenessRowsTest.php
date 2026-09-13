@@ -147,4 +147,24 @@ final class MemberCompletenessRowsTest extends CIUnitTestCase
         $this->assertSame(['Birthday'], $rows[3]['missing']);
         $this->assertSame(['First Name'], $rows[4]['missing']);
     }
+
+    public function testInvalidControlMappingIsNotMaskedByAnotherValidControl(): void
+    {
+        $db = db_connect();
+        $db->table('barangay')->insert(['barangayID' => 1, 'name' => 'SANTO TOMAS']);
+        ReferentialFixture::heads($db, [1]);
+        ReferentialFixture::cards($db, [1], 6400);
+        $db->table('member')->update([
+            'firstname' => 'JUAN', 'lastname' => 'CRUZ', 'sex' => 'MALE',
+            'birthday' => '1990-01-01', 'address' => 'SAMPLE STREET',
+            'contactnumber' => '09171234567', 'barangayID' => 1,
+        ], ['memberID' => 1]);
+        $db->table('qr_control')->insert(['control_no' => 10000000, 'headID' => 1]);
+
+        $rows = (new MemberModel())->cardReadinessRows();
+
+        $this->assertSame([1], array_map('intval', array_column($rows, 'memberID')));
+        $this->assertSame(6401, (int) $rows[0]['control_no']);
+        $this->assertSame(['Control Number'], $rows[0]['missing']);
+    }
 }

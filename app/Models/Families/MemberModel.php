@@ -558,8 +558,8 @@ class MemberModel extends Model
     }
 
     /**
-     * Active heads whose required access-card fields need follow-up. A grouped
-     * control-number join keeps malformed legacy mappings to one head row.
+     * Active heads whose required access-card fields need follow-up. Control mappings
+     * are collected per head so one valid number cannot hide a malformed legacy row.
      *
      * @return list<array{memberID: int|string, control_no: int|string|null, firstname: string|null, lastname: string|null, suffix: string|null, sex: string|null, birthday: string|null, address: string|null, contactnumber: string|null, barangay: string|null, missing: list<string>}>
      */
@@ -570,17 +570,56 @@ class MemberModel extends Model
         $barangay = $this->db->prefixTable('barangay');
 
         $rows = $this->db->table($member . ' member')
-            ->select('member.memberID, MIN(qc.control_no) AS control_no, member.firstname, member.lastname, member.suffix, member.sex, member.birthday, member.address, member.contactnumber, barangay.name AS barangay', false)
+            ->select('member.memberID, qc.control_no, member.firstname, member.lastname, member.suffix, member.sex, member.birthday, member.address, member.contactnumber, barangay.name AS barangay', false)
             ->join($qrControl . ' qc', 'qc.headID = member.memberID', 'left')
             ->join($barangay . ' barangay', 'barangay.barangayID = member.barangayID AND barangay.dt_deleted IS NULL', 'left', false)
             ->where('member.headID = member.memberID', null, false)
             ->where('member.dt_deleted IS NULL', null, false)
-            ->groupBy('member.memberID, member.firstname, member.lastname, member.suffix, member.sex, member.birthday, member.address, member.contactnumber, barangay.name')
-            ->orderBy('control_no IS NOT NULL', 'asc', false)
-            ->orderBy('control_no', 'asc')
             ->orderBy('member.memberID', 'asc')
             ->get()
             ->getResultArray();
+
+        $heads = [];
+
+        foreach ($rows as $row) {
+            $headId = (int) $row['memberID'];
+
+            if (! isset($heads[$headId])) {
+                $heads[$headId] = $row;
+                $heads[$headId]['control_values'] = [];
+            }
+
+            if ($row['control_no'] !== null) {
+                $heads[$headId]['control_values'][] = (string) $row['control_no'];
+            }
+        }
+
+        foreach ($heads as &$head) {
+            $controls = $head['control_values'];
+            $valid = array_values(array_filter($controls, static fn (string $controlNo): bool =>
+                preg_match('/^[1-9]\d{0,6}$/', $controlNo) === 1
+            ));
+
+            sort($valid, SORT_NUMERIC);
+            sort($controls, SORT_NUMERIC);
+            $head['control_no'] = $valid[0] ?? $controls[0] ?? null;
+            $head['has_invalid_control'] = count($valid) !== count($controls);
+            unset($head['control_values']);
+        }
+        unset($head);
+
+        $rows = array_values($heads);
+        usort($rows, static function (array $a, array $b): int {
+            $aHasNoControl = $a['control_no'] === null;
+            $bHasNoControl = $b['control_no'] === null;
+
+            if ($aHasNoControl !== $bHasNoControl) {
+                return $aHasNoControl ? -1 : 1;
+            }
+
+            return ((int) ($a['control_no'] ?? 0) <=> (int) ($b['control_no'] ?? 0))
+                ?: ((int) $a['memberID'] <=> (int) $b['memberID']);
+        });
 
         return array_values(array_filter(array_map(static function (array $row): array {
             $missing = [];
@@ -589,7 +628,7 @@ class MemberModel extends Model
             $birthdayDate = \DateTimeImmutable::createFromFormat('!Y-m-d', $birthday);
             $contact = ContactNumber::parse($row['contactnumber'] ?? null);
 
-            if (preg_match('/^[1-9]\d{0,6}$/', $controlNo) !== 1) {
+            if (($row['has_invalid_control'] ?? false) || preg_match('/^[1-9]\d{0,6}$/', $controlNo) !== 1) {
                 $missing[] = 'Control Number';
             }
             if (trim((string) ($row['firstname'] ?? '')) === '') {
@@ -615,6 +654,7 @@ class MemberModel extends Model
             }
 
             $row['missing'] = $missing;
+            unset($row['has_invalid_control']);
 
             return $row;
         }, $rows), static fn (array $row): bool => $row['missing'] !== []));
