@@ -197,6 +197,7 @@ class ImportReviewPresenter
             $data     = is_array($entry['data'] ?? null) ? $entry['data'] : [];
             $qr       = trim((string) ($data['familyno'] ?? ''));
             $own      = $errorsByRow[$sheetRow] ?? [];
+            $own      = $this->visibleErrors($own, $data);
             $resolution = $discarded[$sheetRow] ?? null;
             $isDiscarded = is_array($resolution);
             $values = [
@@ -231,6 +232,26 @@ class ImportReviewPresenter
         }
 
         return $out;
+    }
+
+    /**
+     * Members inherit household address and barangay from their Head. Spreadsheet cells
+     * in those columns are intentionally ignored, so stale validation noise must not
+     * make a member look actionable in the review.
+     *
+     * @param list<array> $errors
+     * @param array<string, string> $data
+     * @return list<array>
+     */
+    private function visibleErrors(array $errors, array $data): array
+    {
+        if ($this->isHeadRow($data)) {
+            return $errors;
+        }
+
+        return array_values(array_filter($errors, static function (array $error): bool {
+            return ! in_array((string) ($error['field'] ?? ''), ['address', 'barangay'], true);
+        }));
     }
 
     /**

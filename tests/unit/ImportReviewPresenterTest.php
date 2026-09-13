@@ -70,6 +70,21 @@ final class ImportReviewPresenterTest extends CIUnitTestCase
         $this->assertSame('Barangay', $page['rows'][0]['fields'][0]['label']);
     }
 
+    public function testMemberHouseholdCellsAreQuietInTheReview(): void
+    {
+        $page = $this->page([
+            'rows' => [$this->row(3, '6001', 'Child')],
+            'errors' => [
+                $this->error(3, '6001', 'BRGY', 'warning', 'barangay'),
+                $this->error(3, '6001', 'ADDRESS', 'blocking', 'address'),
+            ],
+        ]);
+
+        $this->assertSame('', $page['rows'][0]['severity']);
+        $this->assertSame([], $page['rows'][0]['issues']);
+        $this->assertSame([], $page['rows'][0]['fields']);
+    }
+
     public function testAMissingHeadIsFixableThroughItsRelationshipField(): void
     {
         // HEAD-NONE is recorded against relationship, so it needs no special case:

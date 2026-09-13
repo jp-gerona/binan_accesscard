@@ -1112,9 +1112,10 @@ class FamilyExcelImporter
             if (trim((string) ($data['barangay'] ?? '')) === '') {
                 $this->missingHeadCardField($row, $familyNo, 'barangay', 'Barangay');
             }
+
+            $this->validateBarangay($row, $familyNo, (string) ($data['barangay'] ?? ''));
         }
 
-        $this->validateBarangay($row, $familyNo, (string) ($data['barangay'] ?? ''));
         $sectorIds = $this->mapSectors($entry, $familyNo, $sectorByCode);
         $contact = $this->contactValue($row, $familyNo, (string) ($data['contactnumber'] ?? ''), $isHead);
         // Suffix (optional): normalise "Jr."->"JR" / map "the 3rd"->"III"; an unmappable
@@ -1539,7 +1540,7 @@ class FamilyExcelImporter
     /**
      * Flags a supplied barangay outside the official Biñan reference list. The match is
      * tolerant (case, ñ, dots and the "(...)" alias are ignored) so "Biñan"/"Sto. Tomas"
-     * still pass. Member values are validated but never used as household data.
+     * still pass. Only a Head establishes household Barangay, so member cells are ignored.
      */
     private function validateBarangay(int $row, string $familyNo, string $value): void
     {

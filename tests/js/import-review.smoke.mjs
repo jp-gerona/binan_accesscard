@@ -329,7 +329,9 @@ const summaryTemplate = el('template', { id: 'importReviewSummary' });
 summaryTemplate.content = { textContent: JSON.stringify({ file: 'import.xlsx', counts: {}, codes: [] }) };
 
 const fieldOptionsTemplate = el('template', { id: 'importReviewFieldOptions' });
-fieldOptionsTemplate.content = { textContent: '{}' };
+fieldOptionsTemplate.content = { textContent: JSON.stringify({
+    services: ['SC1', 'FA6'],
+}) };
 
 const root = el('div', {
     id: 'importReview',
@@ -412,6 +414,13 @@ const rowPage = {
             value: '',
             severity: 'warning',
             message: 'Monthly Income is blank.',
+        }, {
+            field: 'services',
+            label: 'Services',
+            cell: 'R42',
+            value: 'ZZZ',
+            severity: 'blocking',
+            message: 'Service code "ZZZ" is not listed.',
         }],
         duplicateGroup: {
             rows: [42, 43],
@@ -483,7 +492,7 @@ assert.ok(badge.textContent.includes('Missing value'), 'badge keeps the label');
 
 // --- Empty state colSpan covers the new column. ---
 currentPayload = emptyPage;
-codeFilterEl.dispatch('change');
+perPageEl.dispatch('change');
 await tick();
 
 const emptyCell = tbody.querySelectorAll('td')[0];
@@ -492,7 +501,7 @@ assert.equal(emptyCell.colSpan, 9, 'the empty-state cell must span all 9 columns
 
 // --- Editor panel colSpan covers the new column too. ---
 currentPayload = rowPage;
-codeFilterEl.dispatch('change');
+perPageEl.dispatch('change');
 await tick();
 
 const openButton = tbody.querySelector('.js-import-open');
@@ -503,6 +512,18 @@ const panel = tbody.querySelector('.js-import-panel');
 assert.ok(panel, 'clicking the toggle must open the editor panel.');
 const panelTd = panel.querySelectorAll('td')[0];
 assert.equal(panelTd.colSpan, 9, 'the editor panel must span all 9 columns.');
+
+// --- Invalid reference codes never become a selectable "current" value. The
+// reviewer can choose only a listed service or clear the field, so browser UI
+// cannot suggest that an unlisted token is acceptable. ---
+const service = panel.querySelector('.js-import-field[data-field="services"]');
+assert.ok(service, 'a Service error must use a review control.');
+assert.equal(service.tagName, 'SELECT', 'Services must use a listed-choice selector.');
+assert.deepEqual(
+    service.children.map((option) => option.value),
+    ['', 'SC1', 'FA6'],
+    'Services offer clear plus active listed codes, never the invalid current code.'
+);
 
 // --- An active Duplicate Row offers a focused comparison with one Keep action
 // per candidate. Resolving posts only the chosen keep_row and refetches this page. ---
@@ -518,7 +539,7 @@ assert.equal(String(resolve.opts.body.entries[0][1]), '42', 'resolver posts the 
 
 // --- Discarded rows stay in All as muted resolution rows with Restore only. ---
 currentPayload = discardedPage;
-codeFilterEl.dispatch('change');
+perPageEl.dispatch('change');
 await tick();
 
 const discardedRow = tbody.querySelector('tr[data-row="43"]');

@@ -205,12 +205,16 @@ final class FamilyExcelImporterTest extends CIUnitTestCase
     {
         $result = $this->importer()->validateAndBuild([
             $this->headRow(3, '6001', ['address' => '1 A Street', 'barangay' => 'Canlalay']),
-            $this->memberRow(4, '6001', ['address' => '99 B Street', 'barangay' => 'Malaban']),
+            $this->memberRow(4, '6001', ['address' => '#', 'barangay' => 'Santa Rosa']),
         ]);
 
         $member = $result['families'][0]['memberPayloads'][0]['payload'];
         $this->assertSame('1 A STREET', $member['address']);
         $this->assertNotContains('FP-ADDR', $this->codes($result));
+        $this->assertSame([], array_values(array_filter($result['errors'], static fn (array $error): bool =>
+            (int) $error['sheetRow'] === 4
+            && in_array($error['field'], ['address', 'barangay'], true)
+        )));
     }
 
     public function testMalformedHeadAddressBlocksInsteadOfBeingInvented(): void

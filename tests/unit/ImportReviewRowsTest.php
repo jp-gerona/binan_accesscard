@@ -295,6 +295,39 @@ final class ImportReviewRowsTest extends CIUnitTestCase
         $this->assertSame('FEMALE', $staged['rows'][3]['data']['sex']);
     }
 
+    public function testMalformedHeadContactBlocksAndClearingItLeavesAReadinessWarning(): void
+    {
+        $userId = $this->encoder();
+        $jobId  = $this->stageJob($userId);
+        $staged = service('importStaging')->load($jobId);
+        $staged['rows'][2]['data']['contactnumber'] = '123';
+        $staged['columns']['contactnumber'] = 'J';
+        $staged['errors'][] = [
+            'sheetRow' => 5, 'familyNo' => '6001', 'code' => 'CONTACT', 'field' => 'contactnumber',
+            'message' => 'Contact number "123" is not valid.', 'severity' => 'blocking',
+        ];
+        $staged['counts']['blocking']++;
+        service('importStaging')->save($jobId, $staged);
+
+        $before = $this->withSession($this->session($userId))
+            ->get('records/import/review/' . $jobId . '/rows?severity=blocking');
+        $beforeJson = json_decode((string) $before->response()->getBody(), true);
+        $contact = array_values(array_filter($beforeJson['rows'], static fn (array $row): bool => (int) $row['sheetRow'] === 5))[0];
+
+        $this->assertSame('blocking', $contact['fields'][0]['severity']);
+
+        $after = $this->withSession($this->session($userId))
+            ->post('records/import/review/' . $jobId . '/apply', [
+                'import_row' => 5,
+                'fields' => ['contactnumber' => ''],
+            ]);
+        $after->assertStatus(200);
+        $afterJson = json_decode((string) $after->response()->getBody(), true);
+
+        $this->assertSame('warning', $afterJson['row']['fields'][0]['severity']);
+        $this->assertStringContainsString('not ready for an access card', $afterJson['row']['fields'][0]['message']);
+    }
+
     public function testApplyNormalizesPostedValuesBeforeStaging(): void
     {
         $userId = $this->encoder();
@@ -365,7 +398,8 @@ final class ImportReviewRowsTest extends CIUnitTestCase
         $staged = service('importStaging')->load($jobId);
 
         $this->assertSame(['keptRow' => 3, 'reason' => 'duplicate'], $staged['discarded'][4]);
-        $this->assertSame(0, $staged['counts']['blocking']);
+        // The duplicate is resolved, while row 6's independent SEX error remains.
+        $this->assertSame(1, $staged['counts']['blocking']);
         $this->assertSame([], array_values(array_filter($staged['errors'], static fn (array $error): bool => (int) $error['sheetRow'] === 4)));
         $this->assertSame('Discarded', $staged['changes'][0]['action']);
     }
@@ -386,7 +420,8 @@ final class ImportReviewRowsTest extends CIUnitTestCase
         $staged = service('importStaging')->load($jobId);
 
         $this->assertArrayNotHasKey(4, $staged['discarded']);
-        $this->assertSame(2, $staged['counts']['blocking']);
+        // Restoring the duplicate restores its two row-level blockers alongside SEX.
+        $this->assertSame(3, $staged['counts']['blocking']);
         $this->assertNotSame([], array_values(array_filter($staged['errors'], static fn (array $error): bool => (int) $error['sheetRow'] === 4 && $error['code'] === 'DUP-ROW')));
         $this->assertSame('Restored', $staged['changes'][1]['action']);
     }
