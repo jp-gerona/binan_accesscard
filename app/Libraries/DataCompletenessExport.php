@@ -23,7 +23,7 @@ class DataCompletenessExport
         $sheet       = $spreadsheet->getActiveSheet();
         $sheet->setTitle('Card Readiness');
 
-        $headers = ['Control Number', 'Head', 'Sex', 'Birthday', 'Address', 'Contact Number', 'Barangay', 'Missing Card Fields'];
+        $headers = ['Control Number', 'First Name', 'Last Name', 'Suffix', 'Sex', 'Birthday', 'Address', 'Contact Number', 'Barangay', 'Missing Card Fields'];
         foreach ($headers as $index => $header) {
             $sheet->getCell(Coordinate::stringFromColumnIndex($index + 1) . '1')->setValue($header);
         }
@@ -31,14 +31,11 @@ class DataCompletenessExport
         $row = 2;
         foreach ($families as $family) {
             $marks = array_fill_keys($family['missing'], 'MISSING');
-            $head = trim(implode(' ', array_filter([
-                trim((string) ($family['firstname'] ?? '')),
-                trim((string) ($family['lastname'] ?? '')),
-                trim((string) ($family['suffix'] ?? '')),
-            ], static fn (string $value): bool => $value !== '')));
             $values = [
                 $marks['Control Number'] ?? (string) ($family['control_no'] ?? ''),
-                $head,
+                $marks['First Name'] ?? (string) ($family['firstname'] ?? ''),
+                $marks['Last Name'] ?? (string) ($family['lastname'] ?? ''),
+                (string) ($family['suffix'] ?? ''),
                 $marks['Sex'] ?? (string) ($family['sex'] ?? ''),
                 $marks['Birthday'] ?? (string) ($family['birthday'] ?? ''),
                 $marks['Address'] ?? (string) ($family['address'] ?? ''),
