@@ -85,6 +85,22 @@ final class ImportReviewPresenterTest extends CIUnitTestCase
         $this->assertSame([], $page['rows'][0]['fields']);
     }
 
+    public function testStaleMemberHouseholdErrorsDoNotBlockOrPopulateSummaryFilters(): void
+    {
+        $summary = (new ImportReviewPresenter())->build([
+            'rows' => [$this->row(3, '6001', 'Child')],
+            'errors' => [
+                $this->error(3, '6001', 'ADDRESS', 'blocking', 'address'),
+                $this->error(3, '6001', 'BRGY', 'warning', 'barangay'),
+            ],
+            'counts' => ['blocking' => 1, 'warnings' => 1],
+        ]);
+
+        $this->assertSame(0, $summary['counts']['blocking']);
+        $this->assertSame(0, $summary['counts']['warnings']);
+        $this->assertSame([], $summary['codes']);
+    }
+
     public function testAMissingHeadIsFixableThroughItsRelationshipField(): void
     {
         // HEAD-NONE is recorded against relationship, so it needs no special case:

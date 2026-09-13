@@ -89,6 +89,7 @@ class ImportReviewPresenter
         $counts = is_array($result['counts'] ?? null) ? $result['counts'] : [];
         $rows   = is_array($result['rows'] ?? null) ? $result['rows'] : [];
         $discarded = is_array($result['discarded'] ?? null) ? $result['discarded'] : [];
+        $visibleErrors = $this->visibleErrorsForRows($errors, $rows);
 
         return [
             'file'   => (string) ($result['file'] ?? 'import.xlsx'),
@@ -101,14 +102,14 @@ class ImportReviewPresenter
                 'existing' => (int) ($counts['existing'] ?? 0),
                 'newFamilies' => max(0, (int) ($counts['families'] ?? 0) - (int) ($counts['existing'] ?? 0)),
                 'appends'  => (int) ($counts['appends'] ?? 0),
-                'blocking' => (int) ($counts['blocking'] ?? 0),
-                'warnings' => (int) ($counts['warnings'] ?? 0),
+                'blocking' => $this->countSeverity($visibleErrors, 'blocking'),
+                'warnings' => $this->countSeverity($visibleErrors, 'warning'),
                 'discarded' => count($discarded),
             ],
             // The codes actually present, so the filter dropdown offers only what
             // this file can be narrowed to.
-            'codes'       => $this->codesPresent($errors),
-            'fileNotices' => $this->fileNotices($errors),
+            'codes'       => $this->codesPresent($visibleErrors),
+            'fileNotices' => $this->fileNotices($visibleErrors),
         ];
     }
 
@@ -252,6 +253,50 @@ class ImportReviewPresenter
         return array_values(array_filter($errors, static function (array $error): bool {
             return ! in_array((string) ($error['field'] ?? ''), ['address', 'barangay'], true);
         }));
+    }
+
+    /**
+     * Keeps page-level badges and filters aligned with the row-level visibility rule.
+     * File-level errors and errors on unknown rows remain visible because there is no
+     * member relationship with which to classify them as inherited household cells.
+     *
+     * @param list<array> $errors
+     * @param list<array> $rows
+     * @return list<array>
+     */
+    private function visibleErrorsForRows(array $errors, array $rows): array
+    {
+        $dataBySheetRow = [];
+
+        foreach ($rows as $row) {
+            $sheetRow = $row['sheetRow'] ?? null;
+            $data = $row['data'] ?? null;
+
+            if ($sheetRow !== null && is_array($data)) {
+                $dataBySheetRow[(int) $sheetRow] = $data;
+            }
+        }
+
+        $visible = [];
+
+        foreach ($errors as $error) {
+            $sheetRow = $error['sheetRow'] ?? null;
+            $data = $sheetRow === null ? null : ($dataBySheetRow[(int) $sheetRow] ?? null);
+
+            if ($data === null || $this->visibleErrors([$error], $data) !== []) {
+                $visible[] = $error;
+            }
+        }
+
+        return $visible;
+    }
+
+    /** @param list<array> $errors */
+    private function countSeverity(array $errors, string $severity): int
+    {
+        return count(array_filter($errors, static fn (array $error): bool =>
+            (($error['severity'] ?? 'blocking') === 'blocking' ? 'blocking' : 'warning') === $severity
+        ));
     }
 
     /**
