@@ -9,7 +9,7 @@
  *
  *   family-import-100A.xlsx      — 100 people, clean valid families (import first).
  *   family-import-100B.xlsx      — 100 people, clean valid families, no overlap with A.
- *   family-import-ALL-ERRORS.xlsx — every remaining blocking code plus warning coverage.
+ *   family-import-ALL-ERRORS.xlsx: every remaining blocking code plus warning coverage.
  *   family-import-C-10k-clean.xlsx  — 10,000 people, all warning-free (bulk load test).
  *   family-import-D-10k-errors.xlsx — 10,000 people, ~1,000 with a seeded field-level issue,
  *                                     the rest warning-free (bulk load + error-handling test).
