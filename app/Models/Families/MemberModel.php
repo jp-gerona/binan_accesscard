@@ -557,32 +557,51 @@ class MemberModel extends Model
     }
 
     /**
-     * Every active family's raw rows for the Data Completeness report: the head
-     * records (memberID = headID) and the member records under them, carrying
-     * exactly the columns whose blanks the report chases. Gap computation and
-     * shaping live in DashboardPageBuilder; the model owns only the query. A
-     * soft-deleted head removes the family; a soft-deleted member is simply
-     * absent.
+     * Active heads whose required access-card fields need follow-up. A grouped
+     * control-number join keeps malformed legacy mappings to one head row.
      *
-     * @return array{heads: list<array<string, string|null>>, members: list<array<string, string|null>>}
+     * @return list<array{memberID: int|string, control_no: int|string|null, firstname: string|null, lastname: string|null, suffix: string|null, sex: string|null, birthday: string|null, address: string|null, contactnumber: string|null, barangay: string|null, missing: list<string>}>
      */
-    public function completenessRows(): array
+    public function cardReadinessRows(): array
     {
-        $heads = $this->builder()
-            ->select('memberID, firstname, lastname, address, barangayID, birthday, sex, civilstatus, education, job, salary')
-            ->where('memberID = headID', null, false)
-            ->where('dt_deleted IS NULL')
+        $member = $this->db->prefixTable('member');
+        $qrControl = $this->db->prefixTable('qr_control');
+        $barangay = $this->db->prefixTable('barangay');
+
+        $rows = $this->db->table($member . ' member')
+            ->select('member.memberID, MIN(qc.control_no) AS control_no, member.firstname, member.lastname, member.suffix, member.sex, member.birthday, member.address, member.contactnumber, barangay.name AS barangay', false)
+            ->join($qrControl . ' qc', 'qc.headID = member.memberID', 'left')
+            ->join($barangay . ' barangay', 'barangay.barangayID = member.barangayID AND barangay.dt_deleted IS NULL', 'left', false)
+            ->where('member.headID = member.memberID', null, false)
+            ->where('member.dt_deleted IS NULL', null, false)
+            ->groupBy('member.memberID, member.firstname, member.lastname, member.suffix, member.sex, member.birthday, member.address, member.contactnumber, barangay.name')
+            ->orderBy('control_no IS NOT NULL', 'asc', false)
+            ->orderBy('control_no', 'asc')
+            ->orderBy('member.memberID', 'asc')
             ->get()
             ->getResultArray();
 
-        $members = $this->builder()
-            ->select('memberID, headID, firstname, lastname, relationship, birthday, sex, civilstatus, education, job, salary')
-            ->where('memberID != headID', null, false)
-            ->where('dt_deleted IS NULL')
-            ->get()
-            ->getResultArray();
+        return array_values(array_filter(array_map(static function (array $row): array {
+            $missing = [];
+            foreach ([
+                'control_no'    => 'Control Number',
+                'firstname'     => 'First Name',
+                'lastname'      => 'Last Name',
+                'sex'           => 'Sex',
+                'birthday'      => 'Birthday',
+                'address'       => 'Address',
+                'contactnumber' => 'Contact Number',
+                'barangay'      => 'Barangay',
+            ] as $field => $label) {
+                if (trim((string) ($row[$field] ?? '')) === '') {
+                    $missing[] = $label;
+                }
+            }
 
-        return ['heads' => $heads, 'members' => $members];
+            $row['missing'] = $missing;
+
+            return $row;
+        }, $rows), static fn (array $row): bool => $row['missing'] !== []));
     }
 
     /**

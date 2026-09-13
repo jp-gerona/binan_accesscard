@@ -36,7 +36,7 @@ class Navigation
             'route' => 'reference-data', 'heading' => 'Profiling', 'roles' => self::ALL_STAFF,
         ],
         [
-            'key' => 'records-completeness', 'label' => 'Data Completeness', 'icon' => 'bi-clipboard-data',
+            'key' => 'records-completeness', 'label' => 'Card Readiness', 'icon' => 'bi-clipboard-data',
             'route' => 'records/completeness', 'heading' => 'Profiling',
             'roles' => ['Developer', 'Admin', 'Encoder'],
         ],

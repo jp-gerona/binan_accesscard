@@ -7,69 +7,51 @@ use PhpOffice\PhpSpreadsheet\Cell\DataType;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 
 /**
- * Builds the Data Completeness .xlsx checklist: one row per person whose
- * record carries a blank (the head first, then the gapped members), with
- * MISSING marking each blank field. The encoder prints it or brings it on
- * field work and ticks people off as the data is collected; the fixes
- * themselves happen through the family edit form, which is audit-trailed.
+ * Builds the Card Readiness .xlsx checklist, one active family head per row.
  */
 class DataCompletenessExport
 {
     /**
-     * Assemble the .xlsx worksheet from the filtered completeness family list.
+     * Assemble the filtered Card Readiness rows, retaining literal values even
+     * when an imported name or address starts with a spreadsheet formula sign.
      *
-     * @param list<array{qr: ?int, head: string, barangay: string, headGaps: list<string>, members: list<array{name: string, relationship: string, gaps: list<string}>}> $families
+     * @param list<array{control_no: int|string|null, firstname: string|null, lastname: string|null, suffix: string|null, sex: string|null, birthday: string|null, address: string|null, contactnumber: string|null, barangay: string|null, missing: list<string>}> $families
      */
     public static function build(array $families): Spreadsheet
     {
         $spreadsheet = new Spreadsheet();
         $sheet       = $spreadsheet->getActiveSheet();
-        $sheet->setTitle('Data Completeness');
+        $sheet->setTitle('Card Readiness');
 
-        $headers = ['QR', 'Family Head', 'Barangay', 'Member', 'Relationship',
-            'Birthday', 'Sex', 'Civil Status', 'Education', 'Job', 'Monthly Income', 'Address'];
-
-        // Cell writes go through Coordinate::stringFromColumnIndex() so the
-        // installed PhpSpreadsheet does not hit the removed byColumnAndRow
-        // family; the address form is what 5.x documents.
+        $headers = ['Control Number', 'Head', 'Sex', 'Birthday', 'Address', 'Contact Number', 'Barangay', 'Missing Card Fields'];
         foreach ($headers as $index => $header) {
-            $coordinate = Coordinate::stringFromColumnIndex($index + 1) . '1';
-            $sheet->getCell($coordinate)->setValue($header);
+            $sheet->getCell(Coordinate::stringFromColumnIndex($index + 1) . '1')->setValue($header);
         }
 
         $row = 2;
-
         foreach ($families as $family) {
-            $personRows = array_merge(
-                [['name' => $family['head'], 'relationship' => 'HEAD', 'gaps' => $family['headGaps']]],
-                $family['members']
-            );
+            $marks = array_fill_keys($family['missing'], 'MISSING');
+            $head = trim(implode(' ', array_filter([
+                trim((string) ($family['firstname'] ?? '')),
+                trim((string) ($family['lastname'] ?? '')),
+                trim((string) ($family['suffix'] ?? '')),
+            ], static fn (string $value): bool => $value !== '')));
+            $values = [
+                $marks['Control Number'] ?? (string) ($family['control_no'] ?? ''),
+                $head,
+                $marks['Sex'] ?? (string) ($family['sex'] ?? ''),
+                $marks['Birthday'] ?? (string) ($family['birthday'] ?? ''),
+                $marks['Address'] ?? (string) ($family['address'] ?? ''),
+                $marks['Contact Number'] ?? (string) ($family['contactnumber'] ?? ''),
+                $marks['Barangay'] ?? (string) ($family['barangay'] ?? ''),
+                implode(', ', $family['missing']),
+            ];
 
-            foreach ($personRows as $person) {
-                $marks = array_fill_keys($person['gaps'], 'MISSING');
-
-                $values = [
-                    (string) ($family['qr'] ?? ''),
-                    $family['head'],
-                    $marks['Barangay'] ?? $family['barangay'],
-                    $person['name'],
-                    $person['relationship'],
-                    $marks['Birthday'] ?? '',
-                    $marks['Sex'] ?? '',
-                    $marks['Civil Status'] ?? '',
-                    $marks['Education'] ?? '',
-                    $marks['Job'] ?? '',
-                    $marks['Monthly Income'] ?? '',
-                    $marks['Address'] ?? '',
-                ];
-
-                foreach ($values as $index => $value) {
-                    $coordinate = Coordinate::stringFromColumnIndex($index + 1) . $row;
-                    $sheet->getCell($coordinate)->setValueExplicit((string) $value, DataType::TYPE_STRING);
-                }
-
-                $row++;
+            foreach ($values as $index => $value) {
+                $sheet->getCell(Coordinate::stringFromColumnIndex($index + 1) . $row)
+                    ->setValueExplicit((string) $value, DataType::TYPE_STRING);
             }
+            $row++;
         }
 
         foreach (range(1, count($headers)) as $column) {

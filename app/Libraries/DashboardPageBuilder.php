@@ -10,7 +10,6 @@ use App\Models\SearchModel;
 use App\Models\Lookups\CategoryModel;
 use App\Models\Lookups\SectorModel;
 use App\Models\Lookups\ServiceModel;
-use App\Models\Scanner\QrControlModel;
 use App\Models\Scanner\SubsidyDistributionModel;
 use App\Models\Scanner\SubsidyTypeModel;
 use App\Models\Scanner\SubsidyStatsModel;
@@ -48,15 +47,6 @@ class DashboardPageBuilder
         'audit-trails'   => 'Admin/audit-trails',
         'records-completeness' => 'Family/completeness',
     ];
-
-    /** The member columns whose blanks the Data Completeness report chases. */
-    private const COMPLETENESS_LABELS = [
-        'birthday' => 'Birthday', 'sex' => 'Sex', 'civilstatus' => 'Civil Status',
-        'education' => 'Education', 'job' => 'Job', 'salary' => 'Monthly Income',
-    ];
-
-    /** Head-only columns the report chases (members inherit the head's). */
-    private const HEAD_COMPLETENESS_LABELS = ['address' => 'Address', 'barangayID' => 'Barangay'];
 
     /** Holds the current request so query params (search/filters/page) are available. */
     public function __construct(private IncomingRequest $request) {}
@@ -423,122 +413,53 @@ class DashboardPageBuilder
     }
 
     /**
-     * The Data Completeness page: every family whose records carry a blank the
-     * import now demotes to a warning, shaped as a chase list. Families with
-     * HEAD-level gaps sort first (a head with no barangay is a more urgent chase
-     * than a child with no education), then by total gap count. ?barangay= and
-     * ?field= narrow the table; the tiles always describe the whole queue.
+     * The Card Readiness page: active heads missing card-required data only.
+     * Filters and pagination stay in the builder while MemberModel owns the
+     * cross-table query and readiness decision.
      */
     public function buildCompletenessViewData(): array
     {
-        $rows      = (new MemberModel())->completenessRows();
-        $qrByHead  = (new QrControlModel())->controlsForHeads(array_column($rows['heads'], 'memberID'));
-        $barangays = (new \App\Models\Lookups\BarangayModel())->nameMap();
-
-        $membersByHead = [];
-
-        foreach ($rows['members'] as $member) {
-            $membersByHead[(int) $member['headID']][] = $member;
-        }
-
-        $families = [];
-
-        foreach ($rows['heads'] as $head) {
-            $headID        = (int) $head['memberID'];
-            $activeMembers = $membersByHead[$headID] ?? [];
-            $members       = [];
-
-            foreach ($activeMembers as $member) {
-                $gaps = self::blankLabels($member, self::COMPLETENESS_LABELS);
-
-                if ($gaps === []) {
-                    continue;
-                }
-
-                $members[] = [
-                    'name'         => trim(($member['firstname'] ?? '') . ' ' . ($member['lastname'] ?? '')),
-                    'relationship' => (string) ($member['relationship'] ?? 'MEMBER'),
-                    'gaps'         => $gaps,
-                ];
-            }
-
-            $headGaps = array_merge(
-                self::blankLabels($head, self::COMPLETENESS_LABELS),
-                self::blankLabels($head, self::HEAD_COMPLETENESS_LABELS)
-            );
-
-            if ($headGaps === [] && $members === []) {
-                continue;
-            }
-
-            $families[] = [
-                'headID'   => $headID,
-                'qr'       => $qrByHead[$headID] ?? null,
-                'head'     => trim(($head['firstname'] ?? '') . ' ' . ($head['lastname'] ?? '')),
-                'barangay' => (string) ($barangays[(int) ($head['barangayID'] ?? 0)] ?? ''),
-                'headGaps'    => $headGaps,
-                'members'     => $members,
-                'memberCount' => 1 + count($activeMembers),
-                'gapCount'    => count($headGaps) + array_sum(array_map(static fn (array $m): int => count($m['gaps']), $members)),
-            ];
-        }
-
-        usort($families, static function (array $a, array $b): int {
-            return [$a['headGaps'] === [], $b['gapCount']] <=> [$b['headGaps'] === [], $a['gapCount']];
-        });
-
-        // Tiles describe the whole queue, before any filter narrows the table.
-        $tiles = ['families' => count($families), 'headGaps' => 0];
-        $fieldTotals = [];
-
-        foreach ($families as $family) {
-            $tiles['headGaps'] += $family['headGaps'] !== [] ? 1 : 0;
-
-            foreach ($family['headGaps'] as $gap) {
-                $fieldTotals[$gap] = ($fieldTotals[$gap] ?? 0) + 1;
-            }
-
-            foreach ($family['members'] as $member) {
-                foreach ($member['gaps'] as $gap) {
-                    $fieldTotals[$gap] = ($fieldTotals[$gap] ?? 0) + 1;
-                }
-            }
-        }
-
-        // ?field= keeps only families carrying that gap; ?barangay= matches the name.
+        $families = (new MemberModel())->cardReadinessRows();
         $filterField    = trim((string) $this->request->getGet('field'));
         $filterBarangay = trim((string) $this->request->getGet('barangay'));
+        $keyword        = trim((string) $this->request->getGet('q'));
 
         if ($filterField !== '') {
-            $families = array_values(array_filter($families, static function (array $f) use ($filterField): bool {
-                if (in_array($filterField, $f['headGaps'], true)) {
-                    return true;
-                }
-
-                foreach ($f['members'] as $member) {
-                    if (in_array($filterField, $member['gaps'], true)) {
-                        return true;
-                    }
-                }
-
-                return false;
-            }));
+            $families = array_values(array_filter($families,
+                static fn (array $family): bool => in_array($filterField, $family['missing'], true)));
         }
 
         if ($filterBarangay !== '') {
             $families = array_values(array_filter($families,
-                static fn (array $f): bool => strcasecmp($f['barangay'], $filterBarangay) === 0));
+                static fn (array $family): bool => strcasecmp((string) $family['barangay'], $filterBarangay) === 0));
         }
 
-        $perPage = 25;
+        if ($keyword !== '') {
+            $families = array_values(array_filter($families, static function (array $family) use ($keyword): bool {
+                return str_contains(strtolower(implode(' ', [
+                    (string) ($family['control_no'] ?? ''),
+                    (string) ($family['firstname'] ?? ''),
+                    (string) ($family['lastname'] ?? ''),
+                    (string) ($family['address'] ?? ''),
+                    (string) ($family['contactnumber'] ?? ''),
+                    (string) ($family['barangay'] ?? ''),
+                ])), strtolower($keyword));
+            }));
+        }
+
+        $perPage = $this->recordsPerPage();
         $page    = max(1, (int) $this->request->getGet('page'));
 
         return [
-            'tiles'          => $tiles + ['byField' => $fieldTotals],
             'families'       => array_slice($families, ($page - 1) * $perPage, $perPage),
-            'allFamilies'    => $families,                     // the download wants every matching row
+            'allFamilies'    => $families,
             'filterBarangay' => $filterBarangay,
             'filterField'    => $filterField,
+            'keyword'        => $keyword,
+            'barangayOptions' => array_values(array_unique(array_filter(array_map(
+                static fn (array $family): string => trim((string) ($family['barangay'] ?? '')),
+                $families
+            )))),
             'page'           => $page,
             'perPage'        => $perPage,
             'pageCount'      => (int) ceil(count($families) / $perPage) ?: 1,
@@ -563,20 +484,6 @@ class DashboardPageBuilder
         $response->setBody((string) ob_get_clean());
 
         return $response;
-    }
-
-    /** @param array<string, string|null> $row @param array<string, string> $labels @return list<string> */
-    private static function blankLabels(array $row, array $labels): array
-    {
-        $gaps = [];
-
-        foreach ($labels as $field => $label) {
-            if (trim((string) ($row[$field] ?? '')) === '') {
-                $gaps[] = $label;
-            }
-        }
-
-        return $gaps;
     }
 
     /**
