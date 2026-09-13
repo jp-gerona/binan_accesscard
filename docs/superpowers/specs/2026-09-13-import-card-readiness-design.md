@@ -122,11 +122,8 @@ stored values for both Heads and members:
 | Sectors | No `member_sectors` rows |
 | Services | No `member_services` rows |
 
-The manual family form must offer the same `NOT PROVIDED` values for its
-choice fields. It must not require the operator to enter a custom Other value
-to represent absence. A nonblank custom occupation, religion, education,
-civil status, or relationship remains supported through the existing Other
-interaction, because these fields can store free text.
+These defaults apply to the importer only. Manual family entry stays outside
+this change and retains its current choices and validation.
 
 Sex cannot receive a textual default because the dump limits it to `MALE` or
 `FEMALE`. It remains missing when not known, which keeps a Head out of card
@@ -231,7 +228,7 @@ is calculated from stored data.
 | `FamilyExcelImporter` | Canonicalize rows, apply defaults, ignore member household cells, validate the import contract, and build safe family payloads. |
 | Import review controller and staging store | Authorize edits, save staged changes, revalidate, and prevent Confirm while Must fix rows exist. |
 | Import review presenter and JavaScript | Show Must fix and Warning states, field-appropriate controls, and current reference choices. |
-| Shared contact validator | Normalize and validate the exact contact forms accepted by both manual entry and imports. |
+| Import contact validator | Normalize and validate the exact contact forms accepted by the importer. |
 | Readiness predicate or query | Decide whether an active Head is printable and select incomplete Heads. |
 | Dashboard page builder and Card Readiness view | Build and render the Head-only records worklist without dashboard cards. |
 | Future printing module | Consume ready Heads through the shared predicate. |
