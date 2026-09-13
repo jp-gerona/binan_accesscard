@@ -53,6 +53,18 @@ Both generating paths call `markGenerated()`, which stamps `card_generated_at`
 and `card_generated_by`. A reprint additionally writes an audit row, so a card
 reissued after a family lost theirs is traceable.
 
+## Card Readiness
+
+Card Readiness is the Head-only follow-up list for households missing a control
+number, first name, last name, sex, birthday, address, contact number, or
+barangay. It is derived from the current active Head data, so a later family edit
+updates the result without a stored `card_ready` flag. Suffix is optional.
+
+Future printing work will consume this shared readiness predicate before it
+selects Heads to print. Printing behavior is unchanged in this work: Card
+Readiness identifies follow-up, but it does not alter the current batch, single
+card, reprint, or QR lookup paths.
+
 ## What the QR encodes
 
 The QR encodes a URL: `QrCardSettings::$qrUrlPrefix` followed by the control

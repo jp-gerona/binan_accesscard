@@ -95,11 +95,12 @@ function memberDefaults(string $rel): array
 }
 
 /**
- * Populates the OPTIONAL columns that would otherwise be blank — Sector, Services, Contact
- * number, Religion — so the test data reads as fully filled. Sector/Services are aligned VALID
- * pairs (children get Bata services), never unknown codes, so the clean files stay error-free.
- * Cells already set (e.g. an intentional 'ZZZ' service or '12345' contact in the error file)
- * are left untouched, so seeded errors survive.
+ * Populates selected optional columns that would otherwise be blank: Sector, Services, Contact
+ * Number, and Religion. This keeps clean-fixture rows representative while other fixtures
+ * exercise the importer's quiet defaults. Sector and service values are aligned valid pairs
+ * (children get Bata services), never invented assignments or unknown codes. Cells already set
+ * (for example, an intentional 'ZZZ' service or '12345' contact in the error file) are left
+ * untouched, so seeded errors survive.
  *
  * @param list<array> $rows
  * @return list<array>
@@ -294,7 +295,7 @@ function errorRows(): array
         mkRow('9100014', 'Head', 'Ramos', 'Iris', 'Lim', '', '01-01-2050', 'Female', 'S - Single', '09171230028', 'Roman Catholic', 'HS - High School', 'Student', 'No regular income', '4 Narra St.', 'Malaban'),
         // INCOME not a bracket/number (warning; currency-prefixed values such as P3000 pass).
         mkRow('9100006', 'Head', 'Flores', 'Rene', 'Lim', '', '03-03-1979', 'Male', 'M - Married', '09171230008', 'Roman Catholic', 'HS - High School', 'Vendor', 'plenty', '9 Ilang St.', 'Ganado'),
-        // SERVICE unknown code blocks; the importer does not repair typo aliases.
+        // SERVICE unknown code blocks until the reviewer selects a listed code or clears it.
         mkRow('9100007', 'Head', 'Castro', 'Fely', 'Go', '', '04-04-1982', 'Female', 'S - Single', '09171230009', 'Roman Catholic', 'CG - College Graduate', 'Teacher', 'PHP 18,001 - 25,000', '3 Ipil St.', 'Platero', '', 'ZZZ'),
         // ===== RED: over-long value ================================================
         // LENGTH: first name over 100 chars.
