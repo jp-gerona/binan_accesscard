@@ -66,18 +66,20 @@ $exportAction = '<a class="' . btn('generate') . ' flex-fill" href="' . esc($dow
     ],
 ]) ?>
 
-<?= view('components/card', [
-    'title' => 'Card Readiness',
-    'icon' => 'clipboard-data',
-    'bodyView' => 'Family/completeness-table',
-    'bodyData' => compact('families', 'filterBarangay', 'filterField', 'keyword', 'perPage'),
-    'footer' => view('components/table_footer', [
-        'fromRecord' => $fromRecord,
-        'toRecord' => $toRecord,
-        'totalRows' => $totalFamilies,
-        'page' => $page,
-        'totalPages' => $pageCount,
-        'pageUrl' => $pageUrl,
-        'entityLabel' => 'heads',
-    ]),
-]) ?>
+<section class="card batch-card card-readiness-records">
+    <div class="card-body">
+        <h2 class="batch-pane-title">Card Readiness</h2>
+        <?= view('Family/completeness-table', compact('families', 'filterBarangay', 'filterField', 'keyword', 'perPage')) ?>
+        <div class="mt-3 small text-muted">
+            <?= view('components/table_footer', [
+                'fromRecord' => $fromRecord,
+                'toRecord' => $toRecord,
+                'totalRows' => $totalFamilies,
+                'page' => $page,
+                'totalPages' => $pageCount,
+                'pageUrl' => $pageUrl,
+                'entityLabel' => 'heads',
+            ]) ?>
+        </div>
+    </div>
+</section>

@@ -71,12 +71,15 @@ final class DataCompletenessPageTest extends CIUnitTestCase
 
         $this->assertStringContainsString('Card Readiness', $view);
         $this->assertStringContainsString('records/completeness/download', $view);
-        $this->assertStringContainsString("'bodyView' => 'Family/completeness-table'", $view);
+        $this->assertStringContainsString('<section class="card batch-card card-readiness-records">', $view);
+        $this->assertStringContainsString('<h2 class="batch-pane-title">Card Readiness</h2>', $view);
+        $this->assertStringContainsString("view('Family/completeness-table'", $view);
         $this->assertStringContainsString('id="completenessTable"', $table);
         $this->assertStringContainsString('>CONTROL NUMBER</th>', $table);
         $this->assertStringContainsString('>EDIT FAMILY</th>', $table);
         $this->assertStringNotContainsString('kpi-row', $view);
         $this->assertStringNotContainsString('tileCards', $view);
+        $this->assertStringNotContainsString("view('components/card'", $view);
         $this->assertStringNotContainsString('<?= $', $table);
     }
 
