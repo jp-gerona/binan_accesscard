@@ -7,6 +7,7 @@ use App\Models\Concerns\MemberQueryFilters;
 use App\Models\Concerns\NormalizesIds;
 use App\Models\Concerns\RecordStatus;
 use App\Models\Concerns\ResolvesSectorNames;
+use App\Support\ContactNumber;
 use App\Support\MemberFieldNormalizer;
 use CodeIgniter\Model;
 
@@ -194,7 +195,7 @@ class MemberModel extends Model
 
         foreach (array_chunk($headIds, 1000) as $chunk) {
             $rows = $this->db->table($this->table)
-                ->select('memberID, firstname, middlename, lastname, suffix, birthday, sex, civilstatus, contactnumber, religion, address')
+                ->select('memberID, firstname, middlename, lastname, suffix, birthday, sex, civilstatus, contactnumber, religion, address, barangayID')
                 ->where($member . '.memberID = ' . $member . '.headID', null, false)
                 ->whereIn('memberID', $chunk)
                 ->get()
@@ -557,32 +558,106 @@ class MemberModel extends Model
     }
 
     /**
-     * Every active family's raw rows for the Data Completeness report: the head
-     * records (memberID = headID) and the member records under them, carrying
-     * exactly the columns whose blanks the report chases. Gap computation and
-     * shaping live in DashboardPageBuilder; the model owns only the query. A
-     * soft-deleted head removes the family; a soft-deleted member is simply
-     * absent.
+     * Active heads whose required access-card fields need follow-up. Control mappings
+     * are collected per head so one valid number cannot hide a malformed legacy row.
      *
-     * @return array{heads: list<array<string, string|null>>, members: list<array<string, string|null>>}
+     * @return list<array{memberID: int|string, control_no: int|string|null, firstname: string|null, lastname: string|null, suffix: string|null, sex: string|null, birthday: string|null, address: string|null, contactnumber: string|null, barangay: string|null, missing: list<string>}>
      */
-    public function completenessRows(): array
+    public function cardReadinessRows(): array
     {
-        $heads = $this->builder()
-            ->select('memberID, firstname, lastname, address, barangayID, birthday, sex, civilstatus, education, job, salary')
-            ->where('memberID = headID', null, false)
-            ->where('dt_deleted IS NULL')
+        $member = $this->db->prefixTable('member');
+        $qrControl = $this->db->prefixTable('qr_control');
+        $barangay = $this->db->prefixTable('barangay');
+
+        $rows = $this->db->table($member . ' member')
+            ->select('member.memberID, qc.control_no, member.firstname, member.lastname, member.suffix, member.sex, member.birthday, member.address, member.contactnumber, barangay.name AS barangay', false)
+            ->join($qrControl . ' qc', 'qc.headID = member.memberID', 'left')
+            ->join($barangay . ' barangay', 'barangay.barangayID = member.barangayID AND barangay.dt_deleted IS NULL', 'left', false)
+            ->where('member.headID = member.memberID', null, false)
+            ->where('member.dt_deleted IS NULL', null, false)
+            ->orderBy('member.memberID', 'asc')
             ->get()
             ->getResultArray();
 
-        $members = $this->builder()
-            ->select('memberID, headID, firstname, lastname, relationship, birthday, sex, civilstatus, education, job, salary')
-            ->where('memberID != headID', null, false)
-            ->where('dt_deleted IS NULL')
-            ->get()
-            ->getResultArray();
+        $heads = [];
 
-        return ['heads' => $heads, 'members' => $members];
+        foreach ($rows as $row) {
+            $headId = (int) $row['memberID'];
+
+            if (! isset($heads[$headId])) {
+                $heads[$headId] = $row;
+                $heads[$headId]['control_values'] = [];
+            }
+
+            if ($row['control_no'] !== null) {
+                $heads[$headId]['control_values'][] = (string) $row['control_no'];
+            }
+        }
+
+        foreach ($heads as &$head) {
+            $controls = $head['control_values'];
+            $valid = array_values(array_filter($controls, static fn (string $controlNo): bool =>
+                preg_match('/^[1-9]\d{0,6}$/', $controlNo) === 1
+            ));
+
+            sort($valid, SORT_NUMERIC);
+            sort($controls, SORT_NUMERIC);
+            $head['control_no'] = $valid[0] ?? $controls[0] ?? null;
+            $head['has_invalid_control'] = count($valid) !== count($controls);
+            unset($head['control_values']);
+        }
+        unset($head);
+
+        $rows = array_values($heads);
+        usort($rows, static function (array $a, array $b): int {
+            $aHasNoControl = $a['control_no'] === null;
+            $bHasNoControl = $b['control_no'] === null;
+
+            if ($aHasNoControl !== $bHasNoControl) {
+                return $aHasNoControl ? -1 : 1;
+            }
+
+            return ((int) ($a['control_no'] ?? 0) <=> (int) ($b['control_no'] ?? 0))
+                ?: ((int) $a['memberID'] <=> (int) $b['memberID']);
+        });
+
+        return array_values(array_filter(array_map(static function (array $row): array {
+            $missing = [];
+            $controlNo = trim((string) ($row['control_no'] ?? ''));
+            $birthday = trim((string) ($row['birthday'] ?? ''));
+            $birthdayDate = \DateTimeImmutable::createFromFormat('!Y-m-d', $birthday);
+            $contact = ContactNumber::parse($row['contactnumber'] ?? null);
+
+            if (($row['has_invalid_control'] ?? false) || preg_match('/^[1-9]\d{0,6}$/', $controlNo) !== 1) {
+                $missing[] = 'Control Number';
+            }
+            if (trim((string) ($row['firstname'] ?? '')) === '') {
+                $missing[] = 'First Name';
+            }
+            if (trim((string) ($row['lastname'] ?? '')) === '') {
+                $missing[] = 'Last Name';
+            }
+            if (! in_array((string) ($row['sex'] ?? ''), ['MALE', 'FEMALE'], true)) {
+                $missing[] = 'Sex';
+            }
+            if ($birthdayDate === false || $birthdayDate->format('Y-m-d') !== $birthday || $birthdayDate > new \DateTimeImmutable('today')) {
+                $missing[] = 'Birthday';
+            }
+            if (trim((string) ($row['address'] ?? '')) === '') {
+                $missing[] = 'Address';
+            }
+            if (! $contact['supplied'] || ! $contact['valid']) {
+                $missing[] = 'Contact Number';
+            }
+            if (trim((string) ($row['barangay'] ?? '')) === '') {
+                $missing[] = 'Barangay';
+            }
+
+            $row['missing'] = $missing;
+            unset($row['has_invalid_control']);
+
+            return $row;
+        }, $rows), static fn (array $row): bool => $row['missing'] !== []));
     }
 
     /**

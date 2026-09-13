@@ -8,8 +8,8 @@ use CodeIgniter\Test\CIUnitTestCase;
 use ReflectionClass;
 
 /**
- * Unit coverage for the hardened QR validation and the family-coherence /
- * fingerprint checks. The lookup caches (sector/service/income) are primed to empty
+ * Unit coverage for the hardened QR validation and the family-coherence checks.
+ * The lookup caches (sector/service/income) are primed to empty
  * arrays via reflection so validateAndBuild runs without a database.
  *
  * @internal
@@ -70,12 +70,12 @@ final class FamilyExcelImporterTest extends CIUnitTestCase
         }
     }
 
-    // -- family coherence + fingerprint ----------------------------------------
+    // -- family coherence ------------------------------------------------------
 
     public function testCleanSingleHeadFamilyBuildsWithNoBlockingErrors(): void
     {
         $result = $this->importer()->validateAndBuild([
-            $this->headRow(3, '6001'),
+            $this->headRow(3, '6001', ['contactnumber' => '09171234567']),
             $this->memberRow(4, '6001'),
         ]);
 
@@ -84,28 +84,28 @@ final class FamilyExcelImporterTest extends CIUnitTestCase
         $this->assertSame(0, $result['counts']['blocking']);
     }
 
-    public function testMemberMissingPersonalFieldsWarnsButStillImports(): void
+    public function testBlankOptionalProfileFieldsReceiveDefaultsWithoutWarnings(): void
     {
-        // Blank personal fields import as NULL with an INCOMPLETE warning; only
-        // identity (names, QR) and family structure block. The Data Completeness
-        // report is where the blanks get chased.
         $result = $this->importer()->validateAndBuild([
-            $this->headRow(3, '6001'),
+            $this->headRow(3, '6001', [
+                'civilstatus' => '', 'education' => '', 'job' => '', 'religion' => '', 'monthlyincome' => '',
+                'contactnumber' => '09171234567',
+            ]),
             $this->memberRow(4, '6001', [
                 'birthday' => '', 'sex' => '', 'civilstatus' => '',
-                'education' => '', 'job' => '', 'monthlyincome' => '',
+                'education' => '', 'job' => '', 'religion' => '', 'monthlyincome' => '',
             ]),
         ]);
 
-        $this->assertSame(0, $result['counts']['blocking']);
-        $this->assertSame(1, $result['counts']['families']);   // still built
-        $incomplete = $this->errorsFor($result, 'INCOMPLETE');
-        $this->assertCount(6, $incomplete);                     // one per blank field
-
-        foreach ($incomplete as $error) {
-            $this->assertSame('warning', $error['severity']);
-            $this->assertStringContainsString('Data Completeness', $error['message']);
+        foreach ([$result['families'][0]['headPayload'], $result['families'][0]['memberPayloads'][0]['payload']] as $payload) {
+            $this->assertSame('NOT PROVIDED', $payload['civilstatus']);
+            $this->assertSame('NOT PROVIDED', $payload['education']);
+            $this->assertSame('NOT PROVIDED', $payload['job']);
+            $this->assertSame('NOT PROVIDED', $payload['religion']);
+            $this->assertSame(0.0, $payload['salary']);
         }
+
+        $this->assertNotContains('INCOMPLETE', $this->codes($result));
     }
 
     public function testHeadBlankAddressAndBarangayWarnButStillImport(): void
@@ -116,23 +116,62 @@ final class FamilyExcelImporterTest extends CIUnitTestCase
 
         $this->assertSame(0, $result['counts']['blocking']);
         $incomplete = $this->errorsFor($result, 'INCOMPLETE');
-        $this->assertCount(2, $incomplete);
-        $this->assertSame('address', $incomplete[0]['field']);
-        $this->assertSame('barangay', $incomplete[1]['field']);
+        $this->assertCount(3, $incomplete);
+        $this->assertSame(['address', 'barangay', 'contactnumber'], array_column($incomplete, 'field'));
+    }
+
+    public function testBlankHeadCardFieldsWarnWhileBlankMemberCardFieldsAreQuiet(): void
+    {
+        $head = $this->importer()->validateAndBuild([
+            $this->headRow(3, '6001', [
+                'sex' => '', 'birthday' => '', 'address' => '', 'barangay' => '', 'contactnumber' => '',
+            ]),
+        ]);
+
+        $this->assertSame(['birthday', 'sex', 'address', 'barangay', 'contactnumber'], array_column(
+            $this->errorsFor($head, 'INCOMPLETE'),
+            'field'
+        ));
+        $this->assertSame(0, $head['counts']['blocking']);
+
+        $member = $this->importer()->validateAndBuild([
+            $this->headRow(3, '6001', ['contactnumber' => '09171234567']),
+            $this->memberRow(4, '6001', [
+                'sex' => '', 'birthday' => '', 'address' => '', 'barangay' => '', 'contactnumber' => '',
+            ]),
+        ]);
+
+        $this->assertNotContains('INCOMPLETE', $this->codes($member));
+    }
+
+    public function testClearingMalformedCardValuesChangesOnlyHeadToWarning(): void
+    {
+        $head = $this->importer()->validateAndBuild([
+            $this->headRow(3, '6001', ['contactnumber' => '0917-12']),
+        ]);
+        $this->assertSame('blocking', $this->errorsFor($head, 'CONTACT')[0]['severity']);
+
+        $clearedHead = $this->importer()->validateAndBuild([
+            $this->headRow(3, '6001', ['contactnumber' => '']),
+        ]);
+        $this->assertSame(['contactnumber'], array_column($this->errorsFor($clearedHead, 'INCOMPLETE'), 'field'));
+
+        $clearedMember = $this->importer()->validateAndBuild([
+            $this->headRow(3, '6001', ['contactnumber' => '09171234567']),
+            $this->memberRow(4, '6001', ['contactnumber' => '']),
+        ]);
+        $this->assertNotContains('INCOMPLETE', $this->codes($clearedMember));
     }
 
     public function testBlankRelationshipOnAMemberImportsAsMember(): void
     {
         $result = $this->importer()->validateAndBuild([
-            $this->headRow(3, '6001'),
+            $this->headRow(3, '6001', ['contactnumber' => '09171234567']),
             $this->memberRow(4, '6001', ['relationship' => '']),
         ]);
 
         $this->assertSame(0, $result['counts']['blocking']);
-        $incomplete = $this->errorsFor($result, 'INCOMPLETE');
-        $this->assertCount(1, $incomplete);
-        $this->assertSame('relationship', $incomplete[0]['field']);
-        $this->assertStringContainsString('imports as a Member', $incomplete[0]['message']);
+        $this->assertNotContains('INCOMPLETE', $this->codes($result));
         // The stored payload keeps the MEMBER default.
         $this->assertSame('MEMBER', $result['families'][0]['memberPayloads'][0]['payload']['relationship']);
     }
@@ -162,26 +201,29 @@ final class FamilyExcelImporterTest extends CIUnitTestCase
         $this->assertSame(0, $result['counts']['blocking']);
     }
 
-    public function testFingerprintFlagsDifferentBarangayInOneFamily(): void
+    public function testMemberAddressAndBarangayAreIgnored(): void
     {
         $result = $this->importer()->validateAndBuild([
-            $this->headRow(3, '6001', ['barangay' => 'Poblacion']),
-            $this->memberRow(4, '6001', ['barangay' => 'Malaban']),
+            $this->headRow(3, '6001', ['address' => '1 A Street', 'barangay' => 'Canlalay']),
+            $this->memberRow(4, '6001', ['address' => '#', 'barangay' => 'Santa Rosa']),
         ]);
 
-        $this->assertContains('FP-ADDR', $this->codes($result));
+        $member = $result['families'][0]['memberPayloads'][0]['payload'];
+        $this->assertSame('1 A STREET', $member['address']);
+        $this->assertNotContains('FP-ADDR', $this->codes($result));
+        $this->assertSame([], array_values(array_filter($result['errors'], static fn (array $error): bool =>
+            (int) $error['sheetRow'] === 4
+            && in_array($error['field'], ['address', 'barangay'], true)
+        )));
     }
 
-    public function testFingerprintIgnoresMixedSurnames(): void
+    public function testMalformedHeadAddressBlocksInsteadOfBeingInvented(): void
     {
-        // Two different surnames but the same (blank) member address/barangay: a real
-        // household. Surname is deliberately NOT part of the fingerprint.
         $result = $this->importer()->validateAndBuild([
-            $this->headRow(3, '6001', ['lastname' => 'Dela Cruz']),
-            $this->memberRow(4, '6001', ['lastname' => 'Reyes']),
+            $this->headRow(3, '6001', ['address' => '#']),
         ]);
 
-        $this->assertNotContains('FP-ADDR', $this->codes($result));
+        $this->assertSame('blocking', $this->errorsFor($result, 'ADDRESS')[0]['severity']);
     }
 
     public function testHeadNoneAndHeadMultiAreFlagged(): void
@@ -227,7 +269,7 @@ final class FamilyExcelImporterTest extends CIUnitTestCase
         $this->assertNotContains('QR-CONTIG', $this->codes($result));
     }
 
-    public function testAnotherFamilyInterleavedStillWarns(): void
+    public function testAnotherFamilyInterleavedWithAnIncompleteContinuationIsBlocked(): void
     {
         $result = $this->importer()->validateAndBuild([
             $this->headRow(3, '6001'),
@@ -235,19 +277,16 @@ final class FamilyExcelImporterTest extends CIUnitTestCase
             $this->memberRow(5, '6001'),
         ]);
 
-        $contig = array_values(array_filter(
-            $result['errors'],
-            static fn (array $e): bool => $e['code'] === 'QR-CONTIG'
-        ));
+        $conflicts = $this->errorsFor($result, 'DUP-QR-FAMILY');
 
-        $this->assertCount(1, $contig);
-        $this->assertSame('warning', $contig[0]['severity']);
-        $this->assertSame('6001', (string) $contig[0]['familyNo']);
+        $this->assertCount(2, $conflicts);
+        $this->assertSame(['blocking', 'blocking'], array_column($conflicts, 'severity'));
+        $this->assertSame(['6001', '6001'], array_map(static fn (array $error): string => (string) $error['familyNo'], $conflicts));
     }
 
-    // -- barangay / contact / suffix / duplicate-person (warnings) -----------
+    // -- barangay / contact / suffix / duplicate-person ----------------------
 
-    public function testBarangayToleratesSpellingButFlagsNonBarangays(): void
+    public function testBarangayToleratesSpellingButBlocksNonBarangays(): void
     {
         // "Biñan" and "Sto. Tomas" are legitimate spellings of official barangays.
         $ok = $this->importer()->validateAndBuild([
@@ -256,31 +295,42 @@ final class FamilyExcelImporterTest extends CIUnitTestCase
         ]);
         $this->assertNotContains('BRGY', $this->codes($ok));
 
-        // "Santa Rosa" is another city: it resolves to no barangayID, so it warns and the
-        // head imports with no barangay (the family is queued on the Data Completeness report).
+        // "Santa Rosa" is another city and cannot safely be written as a barangay.
         $bad = $this->importer()->validateAndBuild([
             $this->headRow(3, '6003', ['barangay' => 'Santa Rosa']),
         ]);
         $brgy = array_values(array_filter($bad['errors'], static fn (array $e): bool => $e['code'] === 'BRGY'));
         $this->assertCount(1, $brgy);
-        $this->assertSame('warning', $brgy[0]['severity']);
-        $this->assertSame(0, $bad['counts']['blocking']);
+        $this->assertSame('blocking', $brgy[0]['severity']);
+        $this->assertSame(1, $bad['counts']['blocking']);
         $this->assertNull($bad['families'][0]['headPayload']['barangayID']);
     }
 
-    public function testContactNumberMustBe09Plus11Digits(): void
+    public function testContactNumberStoresCanonicalDigitsAndBlocksMalformedValues(): void
     {
         $good = $this->importer()->validateAndBuild([
             $this->headRow(3, '6001', ['contactnumber' => '0917-123-4567']), // punctuation ok
         ]);
         $this->assertNotContains('CONTACT', $this->codes($good));
+        $this->assertSame('09171234567', $good['families'][0]['headPayload']['contactnumber']);
 
         foreach (['0917', '+639171234567', '09171234567890', '99171234567'] as $bad) {
             $result = $this->importer()->validateAndBuild([
                 $this->headRow(3, '6001', ['contactnumber' => $bad]),
             ]);
-            $this->assertContains('CONTACT', $this->codes($result), "expected '{$bad}' to warn");
+            $this->assertContains('CONTACT', $this->codes($result), "expected '{$bad}' to block");
+            $this->assertSame('blocking', $this->errorsFor($result, 'CONTACT')[0]['severity']);
         }
+    }
+
+    public function testMalformedMemberContactAlsoBlocks(): void
+    {
+        $result = $this->importer()->validateAndBuild([
+            $this->headRow(3, '6001', ['contactnumber' => '09171234567']),
+            $this->memberRow(4, '6001', ['contactnumber' => '0917-12']),
+        ]);
+
+        $this->assertSame('blocking', $this->errorsFor($result, 'CONTACT')[0]['severity']);
     }
 
     public function testCanonicalRowsStageCleanedValues(): void
@@ -396,16 +446,16 @@ final class FamilyExcelImporterTest extends CIUnitTestCase
         $this->assertNull($result['families'][0]['headPayload']['suffix']);
     }
 
-    public function testInvalidSexWarnsAndImportsBlank(): void
+    public function testInvalidSexBlocksAndDoesNotInventAValue(): void
     {
         $result = $this->importer()->validateAndBuild([
             $this->headRow(3, '6001', ['sex' => 'Xyz']),
         ]);
 
-        $this->assertSame(0, $result['counts']['blocking']);
+        $this->assertSame(1, $result['counts']['blocking']);
         $sex = $this->errorsFor($result, 'SEX');
         $this->assertCount(1, $sex);
-        $this->assertSame('warning', $sex[0]['severity']);
+        $this->assertSame('blocking', $sex[0]['severity']);
         $this->assertStringContainsString('XYZ', $sex[0]['message']);
         $this->assertNull($result['families'][0]['headPayload']['sex']);
     }
@@ -458,33 +508,31 @@ final class FamilyExcelImporterTest extends CIUnitTestCase
         }
     }
 
-    public function testUnparseableBirthdayWarnsAndImportsBlank(): void
+    public function testUnparseableBirthdayBlocksAndDoesNotInventAValue(): void
     {
         $result = $this->importer()->validateAndBuild([
             $this->headRow(3, '6001', ['birthday' => '03-07']),
         ]);
 
-        $this->assertSame(0, $result['counts']['blocking']);
+        $this->assertSame(1, $result['counts']['blocking']);
         $bday = $this->errorsFor($result, 'BDAY');
         $this->assertCount(1, $bday);
-        $this->assertSame('warning', $bday[0]['severity']);
+        $this->assertSame('blocking', $bday[0]['severity']);
         $this->assertStringContainsString('03-07', $bday[0]['message']);
         $this->assertNull($result['families'][0]['headPayload']['birthday']);
     }
 
-    public function testFutureBirthdayWarnsAndImportsBlank(): void
+    public function testFutureBirthdayBlocksAndDoesNotInventAValue(): void
     {
-        // MemberModel's not_future_date rule rejects a future birthday at write time
-        // and rolls back the family, so the import stores NULL instead and warns.
-        // The original value stays quoted in the message for the spreadsheet fixer.
+        // The original value stays quoted in the blocking message for the spreadsheet fixer.
         $result = $this->importer()->validateAndBuild([
             $this->headRow(3, '6001', ['birthday' => '01-01-2050']),
         ]);
 
-        $this->assertSame(0, $result['counts']['blocking']);
+        $this->assertSame(1, $result['counts']['blocking']);
         $future = $this->errorsFor($result, 'BDAY-FUTURE');
         $this->assertCount(1, $future);
-        $this->assertSame('warning', $future[0]['severity']);
+        $this->assertSame('blocking', $future[0]['severity']);
         $this->assertStringContainsString('01-01-2050', $future[0]['message']);
         $this->assertNull($result['families'][0]['headPayload']['birthday']);
     }
@@ -532,16 +580,16 @@ final class FamilyExcelImporterTest extends CIUnitTestCase
         }
     }
 
-    public function testBirthdayTruncatedOrYearOnlyStillWarns(): void
+    public function testBirthdayTruncatedOrYearOnlyBlocks(): void
     {
-        // No parser can invent the missing parts; these import blank and are chased
-        // on the Data Completeness report.
+        // No parser can invent the missing parts, so these block until corrected or cleared.
         foreach (['03-07', '01-11-', '2008', '1/21/20104'] as $typed) {
             $result = $this->importer()->validateAndBuild([
                 $this->headRow(3, '6001', ['birthday' => $typed]),
             ]);
 
-            $this->assertContains('BDAY', $this->codes($result), "'{$typed}' should warn");
+            $this->assertContains('BDAY', $this->codes($result), "'{$typed}' should block");
+            $this->assertSame('blocking', $this->errorsFor($result, 'BDAY')[0]['severity']);
             $this->assertNull($result['families'][0]['headPayload']['birthday']);
         }
     }
@@ -670,9 +718,9 @@ final class FamilyExcelImporterTest extends CIUnitTestCase
     public function testContiguityWarningAllowsASeparatedSameHeadContinuation(): void
     {
         $result = $this->importer()->validateAndBuild([
-            $this->headRow(3, '6001'),
+            $this->headRow(3, '6001', ['middlename' => 'SANTOS', 'suffix' => 'JR']),
             $this->headRow(4, '6002'),
-            $this->headRow(5, '6001'),
+            $this->headRow(5, '6001', ['middlename' => 'SANTOS', 'suffix' => 'JR']),
         ]);
 
         $this->assertSame(['QR-CONTIG'], array_values(array_filter(
@@ -680,6 +728,35 @@ final class FamilyExcelImporterTest extends CIUnitTestCase
             static fn (string $code): bool => in_array($code, ['QR-CONTIG', 'DUP-QR-FAMILY', 'HEAD-MULTI'], true),
         )));
         $this->assertSame('warning', $this->errorsFor($result, 'QR-CONTIG')[0]['severity']);
+    }
+
+    public function testSeparatedBlocksWithDifferentMiddleOrSuffixAreBlocked(): void
+    {
+        $differentMiddle = $this->importer()->validateAndBuild([
+            $this->headRow(3, '6001', ['middlename' => 'SANTOS', 'suffix' => 'JR']),
+            $this->headRow(4, '6002'),
+            $this->headRow(5, '6001', ['middlename' => 'REYES', 'suffix' => 'JR']),
+        ]);
+        $differentSuffix = $this->importer()->validateAndBuild([
+            $this->headRow(3, '6001', ['middlename' => 'SANTOS', 'suffix' => 'JR']),
+            $this->headRow(4, '6002'),
+            $this->headRow(5, '6001', ['middlename' => 'SANTOS', 'suffix' => 'SR']),
+        ]);
+
+        $this->assertCount(2, $this->errorsFor($differentMiddle, 'DUP-QR-FAMILY'));
+        $this->assertCount(2, $this->errorsFor($differentSuffix, 'DUP-QR-FAMILY'));
+    }
+
+    public function testSeparatedBlocksWithIncompleteHeadIdentityAreBlocked(): void
+    {
+        $result = $this->importer()->validateAndBuild([
+            $this->headRow(3, '6001', ['middlename' => 'SANTOS']),
+            $this->headRow(4, '6002'),
+            $this->headRow(5, '6001', ['middlename' => '']),
+        ]);
+
+        $this->assertCount(2, $this->errorsFor($result, 'DUP-QR-FAMILY'));
+        $this->assertSame([], $this->errorsFor($result, 'QR-CONTIG'));
     }
 
     public function testTwoHeadsInOneContiguousBlockAreOnlyHeadMulti(): void
@@ -695,11 +772,10 @@ final class FamilyExcelImporterTest extends CIUnitTestCase
         )));
     }
 
-    // -- head-less family: use the address to find the likely Head --------------
+    // -- head-less family -------------------------------------------------------
 
-    public function testHeadlessFamilyPointsAtTheRowCarryingTheAddress(): void
+    public function testHeadlessFamilyDoesNotInferAHeadFromMemberAddresses(): void
     {
-        // Only the Head fills Address/Barangay - so the row that has one IS the head.
         $result = $this->importer()->validateAndBuild([
             $this->memberRow(3, '6001', ['firstname' => 'Maria', 'address' => '', 'barangay' => '']),
             $this->memberRow(4, '6001', ['firstname' => 'Juan', 'address' => '12 Rizal St', 'barangay' => 'Poblacion']),
@@ -712,59 +788,9 @@ final class FamilyExcelImporterTest extends CIUnitTestCase
         ));
 
         $this->assertCount(1, $headNone);
-        $this->assertSame(4, $headNone[0]['sheetRow']); // anchored on Juan, who has the address
-        $this->assertStringContainsString('most likely the Head', $headNone[0]['message']);
-        $this->assertStringContainsString('JUAN DELA CRUZ', $headNone[0]['message']);
-    }
-
-    public function testHeadlessFamilyWithNoAddressSaysSo(): void
-    {
-        $result = $this->importer()->validateAndBuild([
-            $this->memberRow(3, '6001', ['address' => '', 'barangay' => '']),
-            $this->memberRow(4, '6001', ['address' => '', 'barangay' => '']),
-        ]);
-
-        $headNone = array_values(array_filter(
-            $result['errors'],
-            static fn (array $e): bool => $e['code'] === 'HEAD-NONE'
-        ));
-
-        $this->assertStringContainsString('no address on any row', $headNone[0]['message']);
-    }
-
-    public function testHeadlessFamilyWithTwoDifferentAddressesWarnsOfTwoHouseholds(): void
-    {
-        $result = $this->importer()->validateAndBuild([
-            $this->memberRow(3, '6001', ['address' => '12 Rizal St', 'barangay' => 'Poblacion']),
-            $this->memberRow(4, '6001', ['address' => '9 Luna St', 'barangay' => 'Malaban']),
-        ]);
-
-        $headNone = array_values(array_filter(
-            $result['errors'],
-            static fn (array $e): bool => $e['code'] === 'HEAD-NONE'
-        ));
-
-        $this->assertStringContainsString('two households', $headNone[0]['message']);
-    }
-
-    public function testHeadlessFamilyWithTheSameAddressRepeatedIsOneHousehold(): void
-    {
-        // The worker repeated the same address on several rows - one household, so the
-        // operator only has to pick who the Head is (NOT a two-household split).
-        $result = $this->importer()->validateAndBuild([
-            $this->memberRow(3, '6001', ['address' => '12 Rizal St', 'barangay' => 'Poblacion']),
-            $this->memberRow(4, '6001', ['address' => '12 Rizal St', 'barangay' => 'Poblacion']),
-            $this->memberRow(5, '6001', ['address' => '12 Rizal St', 'barangay' => 'Poblacion']),
-        ]);
-
-        $headNone = array_values(array_filter(
-            $result['errors'],
-            static fn (array $e): bool => $e['code'] === 'HEAD-NONE'
-        ));
-
-        $this->assertStringContainsString('same address', $headNone[0]['message']);
-        $this->assertStringContainsString('one household', $headNone[0]['message']);
-        $this->assertStringNotContainsString('two households', $headNone[0]['message']);
+        $this->assertSame(3, $headNone[0]['sheetRow']);
+        $this->assertStringContainsString('Set one person as Head', $headNone[0]['message']);
+        $this->assertStringNotContainsString('address', $headNone[0]['message']);
     }
 
     // -- add-member-to-existing-family (append) --------------------------------
@@ -814,6 +840,25 @@ final class FamilyExcelImporterTest extends CIUnitTestCase
         $this->assertStringContainsString('will be ADDED', $add[0]['message']);
         $this->assertStringContainsString('delete this row', $add[0]['message']);
         $this->assertSame(1, $result['counts']['appends']);
+    }
+
+    public function testAppendUsesTheStoredHeadHouseholdValuesInsteadOfMemberCells(): void
+    {
+        $result = $this->importer()->validateAndBuild(
+            [$this->memberRow(3, '6001', [
+                'address' => '999 SOURCE STREET',
+                'barangay' => 'SOURCE BARANGAY',
+            ])],
+            $this->existingHead(6001, $this->storedHead([
+                'address' => '100 STORED STREET',
+                'barangayID' => 24,
+            ])),
+        );
+
+        $payload = $result['appends'][0]['payload'];
+
+        $this->assertSame('100 STORED STREET', $payload['address']);
+        $this->assertSame(24, $payload['barangayID']);
     }
 
     // -- "already in the system" must be the SAME person, 1:1 -------------------
@@ -1012,6 +1057,27 @@ final class FamilyExcelImporterTest extends CIUnitTestCase
         $this->assertSame([], $result['families'][0]['headServiceIds']);
     }
 
+    public function testWhitespaceDelimitedSectorCodesBecomeOneInvalidToken(): void
+    {
+        $result = $this->importerWithLookups()->validateAndBuild([
+            $this->headRow(3, '6001', ['sector' => 'SC1 SC2']),
+        ]);
+
+        $this->assertSame(1, $result['counts']['blocking']);
+        $this->assertStringContainsString('SC1SC2', $this->errorsFor($result, 'SECTOR')[0]['message']);
+        $this->assertSame([], $result['families'][0]['headPayload']['sector_ids']);
+    }
+
+    public function testBlankSectorAndServiceListsCreateNoAssignments(): void
+    {
+        $result = $this->importerWithLookups()->validateAndBuild([
+            $this->headRow(3, '6001', ['sector' => '', 'services' => '']),
+        ]);
+
+        $this->assertSame([], $result['families'][0]['headPayload']['sector_ids']);
+        $this->assertSame([], $result['families'][0]['headServiceIds']);
+    }
+
     public function testUnknownServiceTokenBlocksAndPreventsPartialServiceAssignment(): void
     {
         $result = $this->importerWithLookups()->validateAndBuild([
@@ -1168,7 +1234,7 @@ final class FamilyExcelImporterTest extends CIUnitTestCase
      * write, so the fixture can't drift from the real normalisation (name cleaning, birthday
      * to Y-m-d, address+barangay combined).
      *
-     * @param array<string, string|null> $overrides
+     * @param array<string, string|int|null> $overrides
      */
     private function storedHead(array $overrides = []): array
     {
@@ -1180,7 +1246,7 @@ final class FamilyExcelImporterTest extends CIUnitTestCase
     /**
      * [qr => stored head] - the shape existingHeadsForRows() returns.
      *
-     * @param array<string, string|null> $record
+     * @param array<string, string|int|null> $record
      */
     private function existingHead(int $qr, array $record): array
     {
@@ -1215,8 +1281,7 @@ final class FamilyExcelImporterTest extends CIUnitTestCase
     }
 
     /**
-     * A complete member row by default; a member's blank personal fields import as NULL
-     * with an INCOMPLETE warning.
+     * A complete member row by default; blank optional profile values receive importer defaults.
      *
      * @param array<string,string> $overrides
      */
@@ -1310,7 +1375,7 @@ final class FamilyExcelImporterTest extends CIUnitTestCase
 
     /**
      * MemberFieldNormalizer::barangayKey() is what both the importer's Barangay
-     * warning and the barangayID resolution fold through - it has to treat "Santo
+     * validation and the barangayID resolution fold through - it has to treat "Santo
      * Niño" (the DB spelling) and "Santo Nino" (the sheet dropdown's ASCII
      * spelling) as the same barangay, and a case/hyphen difference like
      * "Soro-Soro" vs "Soro-soro" as the same barangay too.
@@ -1337,7 +1402,7 @@ final class FamilyExcelImporterTest extends CIUnitTestCase
     /**
      * Resolves a head's Barangay cell to the matching barangayID (case-insensitive,
      * ñ-tolerant), and leaves it null on a blank or unrecognised value rather than
-     * failing the row - validateBarangay() already raises the warning for that case.
+     * failing the row - validateBarangay() already raises the review error for that case.
      */
     public function testBarangayIdForHeadResolvesOrReturnsNull(): void
     {

@@ -71,15 +71,11 @@ class FamilyExcelTemplate
         'Job', 'MonthlyIncome', 'Address', 'Barangay', 'Sector', 'Services',
     ];
 
-    /**
-     * Starred columns (" *"): needed for a COMPLETE record, not before import.
-     * A blank value imports as missing and the family enters Data Completeness
-     * until the data is collected.
-     */
-    private const ALWAYS_REQUIRED = ['QR Number', 'Relationship', 'FirstName', 'LastName', 'Birthday', 'Sex', 'CivilStatus', 'Education', 'Job', 'MonthlyIncome'];
+    /** Starred columns are identity fields that must be supplied before import. */
+    private const MUST_FIX_FIELDS = ['QR Number', 'FirstName', 'LastName'];
 
-    /** Columns required only on the Head row (members inherit) - flagged via a header comment. */
-    private const HEAD_REQUIRED = ['Address', 'Barangay'];
+    /** Daggered columns warn only when blank on the Head row. */
+    private const HEAD_CARD_FIELDS = ['Birthday', 'Sex', 'ContactNumber', 'Address', 'Barangay'];
 
     /** Per-column entry widths (display only). */
     private const WIDTHS = [
@@ -99,8 +95,8 @@ class FamilyExcelTemplate
         'Education'     => 'Pick a code: E, HS, UG, Voc, CG, PG.',
         'Address'       => 'Head: full house/street address. Members: leave blank - they use the head\'s address.',
         'Barangay'      => 'Head: pick the barangay. Members: leave blank - they use the head\'s.',
-        'Sector'        => 'WHO they are. Sector code(s), comma-separated: SC, PWD, SP, B, LGBT, OFW, IP, IDP, PDL. Use OTHER if none apply. See Reference.',
-        'Services'      => 'Programs RECEIVED. Service code(s), comma-separated (e.g. SC1, FA6, 4PS, EDA5). See Reference.',
+        'Sector'        => 'WHO they are. Use listed sector code(s), comma-separated. Leave blank when none apply. Use OTHER only when it is listed and applies. See Reference.',
+        'Services'      => 'Programs RECEIVED. Use listed service code(s), comma-separated (e.g. SC1, FA6, 4PS). Leave blank when none apply. See Reference.',
     ];
 
     /** Group banners over the header (start, end, label, fill RGB). @var list<array{0:int,1:int,2:string,3:string}> */
@@ -266,11 +262,11 @@ class FamilyExcelTemplate
 
         $lastColumn = $this->columnLetter(count(self::COLUMNS));
         $noteRow = 8;
-        $sheet->setCellValue('A' . $noteRow, 'Examples only - enter real data on the "' . self::DATA_SHEET . '" sheet. One row per person. Name order is Last Name, First Name, Middle Name. Birthday is MM-DD-YYYY. Mark each head of family with Relationship = Head. Put as many families as you like in one file: each family gets its own QR number, shared by its members. Members leave Address and Barangay blank - they automatically use the head\'s address. SECTOR = WHO the person is (SC, PWD, SP, B, LGBT, OFW, IP, IDP, PDL, or OTHER) and SERVICES = the programs they RECEIVED (e.g. SC1, FA6, EDA5, 4PS) - both take CODES separated by commas; see the Reference sheet. " * " marks the columns needed for a complete record (incl. Birthday, Sex, Civil Status, Education, Job and Monthly Income). Blank values import as missing: they do not block the import, and the family stays on the Data Completeness report until the data is collected. The Head row also carries the family\'s Address and Barangay.');
+        $sheet->setCellValue('A' . $noteRow, 'Examples only. Enter real data on the "' . self::DATA_SHEET . '" sheet, one row per person. Name order is Last Name, First Name, Middle Name. Birthday is MM-DD-YYYY. Mark each head with Relationship = Head. Each family has one QR Number shared by its members. Only the Head supplies the household Address and Barangay. Member Address and Barangay cells are ignored. " * " marks identity data that is Must fix when blank. " † " marks Head Card Readiness data: Sex, Birthday, Contact Number, Address, and Barangay. A blank Head card field imports with a warning and appears in Card Readiness. Blank Monthly Income defaults to 0. Civil Status, Education, Job, and Religion default to NOT PROVIDED. Leave Sector and Services blank when none apply: do not invent a sector or service. Use only listed codes, separated by commas. Spaces around commas are ignored, but spaces alone do not separate codes. CHECK is guidance only. The server validates every workbook again when you upload it.');
         $sheet->mergeCells('A' . $noteRow . ':' . $lastColumn . $noteRow);
         $sheet->getStyle('A' . $noteRow)->getAlignment()->setWrapText(true)->setVertical(Alignment::VERTICAL_TOP);
         $sheet->getStyle('A' . $noteRow)->getFont()->setBold(true);
-        $sheet->getRowDimension($noteRow)->setRowHeight(70);
+        $sheet->getRowDimension($noteRow)->setRowHeight(110);
 
         $index = 1;
         foreach (self::COLUMNS as $heading) {
@@ -282,10 +278,10 @@ class FamilyExcelTemplate
 
     /**
      * Adds a helper "Check" column after the data columns: a per-row formula that flags
-     * problems live in Excel (missing fields, head counts, duplicate QR across families,
-     * several addresses under one QR), colored red for Must fix output, yellow for
-     * incomplete-data output (Missing Income), green for OK. Excel-only preflight: the
-     * importer never reads this column - the server-side import validates everything.
+     * problems live in Excel (missing identity fields, head counts, duplicate QR across
+     * families, and Head card-readiness gaps), colored red for Must fix output, yellow
+     * for Card Readiness warnings, green for OK. Excel-only preflight: the importer never
+     * reads this column, and server-side import validation remains authoritative.
      */
     private function addCheckColumn(Worksheet $sheet): void
     {
@@ -304,7 +300,7 @@ class FamilyExcelTemplate
         $sheet->setCellValue($headerCell, 'Check');
         $this->styleFlatHeader($sheet, $headerCell . ':' . $headerCell);
         $sheet->getStyle($headerCell)->getAlignment()->setWrapText(true)->setVertical(Alignment::VERTICAL_CENTER);
-        $sheet->getComment($headerCell)->getText()->createTextRun('Excel-only preflight. Fix any row that is not "OK" before importing; a yellow "Missing Income" imports as missing data and enters Data Completeness. This column is ignored on import.');
+        $sheet->getComment($headerCell)->getText()->createTextRun('Excel-only preflight. Red results are Must fix. Yellow Card Readiness results are Head follow-up warnings and may import. This column is ignored on import; the server validates every workbook.');
         $sheet->getColumnDimension($col)->setWidth(26);
 
         // Per-row validation formula.
@@ -312,16 +308,15 @@ class FamilyExcelTemplate
             $sheet->setCellValue($col . $row, $this->checkFormula($row));
         }
 
-        // Red for Must fix output, yellow for the single incomplete-data outcome
-        // (Missing Income), green when the row is ready.
+        // Red is Must fix, yellow is a Head Card Readiness warning, green is clear.
         $range = $col . self::FIRST_DATA_ROW . ':' . $col . self::LAST_TEMPLATE_ROW;
         $mustFix = new Conditional();
-        $mustFix->setConditionType(Conditional::CONDITION_EXPRESSION)->setConditions(['AND($' . $col . self::FIRST_DATA_ROW . '<>"",$' . $col . self::FIRST_DATA_ROW . '<>"OK",$' . $col . self::FIRST_DATA_ROW . '<>"Missing Income")']);
+        $mustFix->setConditionType(Conditional::CONDITION_EXPRESSION)->setConditions(['AND($' . $col . self::FIRST_DATA_ROW . '<>"",$' . $col . self::FIRST_DATA_ROW . '<>"OK",LEFT($' . $col . self::FIRST_DATA_ROW . ',14)<>"Card Readiness")']);
         $mustFix->getStyle()->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('FFC7CE');
         $mustFix->getStyle()->getFill()->getEndColor()->setRGB('FFC7CE');
         $mustFix->getStyle()->getFont()->setBold(true)->getColor()->setRGB('9C0006');
         $incomplete = new Conditional();
-        $incomplete->setConditionType(Conditional::CONDITION_EXPRESSION)->setConditions(['$' . $col . self::FIRST_DATA_ROW . '="Missing Income"']);
+        $incomplete->setConditionType(Conditional::CONDITION_EXPRESSION)->setConditions(['LEFT($' . $col . self::FIRST_DATA_ROW . ',14)="Card Readiness"']);
         $incomplete->getStyle()->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('FFF2CC');
         $incomplete->getStyle()->getFill()->getEndColor()->setRGB('FFF2CC');
         $incomplete->getStyle()->getFont()->setBold(true)->getColor()->setRGB('7F6000');
@@ -335,12 +330,12 @@ class FamilyExcelTemplate
 
     /**
      * Builds the Check-column formula for one row. Blank rows show nothing; otherwise it
-     * reports the first problem found, else "OK". Row conditions: empty QR/relationship/
-     * name, and blank income as the yellow incomplete-data outcome. Family-block
-     * conditions read the whole QR + flag columns (COUNTIFS across the
-     * entry area): no head, multiple heads, two blocks sharing a QR with different
-     * head identities, or several addresses under one QR. Columns: A = QR Number,
-     * B = Relationship, C = LastName, D = FirstName, N = MonthlyIncome, O = Address.
+     * reports the first problem found, else "OK". Identity and household structure are
+     * Must fix. A blank Head birthday, sex, contact number, address, or barangay is a
+     * Card Readiness warning. Family-block conditions read the whole QR + flag columns
+     * with COUNTIFS across the entry area. Columns: A = QR Number, B = Relationship,
+     * C = LastName, D = FirstName, G = Birthday, H = Sex, J = ContactNumber,
+     * O = Address, P = Barangay.
      */
     private function checkFormula(int $row): string
     {
@@ -350,29 +345,31 @@ class FamilyExcelTemplate
         $bRange = '$B$' . $from . ':$B$' . $to;
         $cRange = '$C$' . $from . ':$C$' . $to;
         $dRange = '$D$' . $from . ':$D$' . $to;
-        $oRange = '$O$' . $from . ':$O$' . $to;
         $a = '$A' . $row;
         $b = '$B' . $row;
         $c = '$C' . $row;
         $d = '$D' . $row;
-        $n = '$N' . $row;
+        $g = '$G' . $row;
+        $h = '$H' . $row;
+        $j = '$J' . $row;
         $o = '$O' . $row;
+        $p = '$P' . $row;
 
         $heads = 'COUNTIFS(' . $aRange . ',' . $a . ',' . $bRange . ',"Head")';
         
         $diffLastNameHeads = 'COUNTIFS(' . $aRange . ',' . $a . ',' . $bRange . ',"Head",' . $cRange . ',"<>"&' . $c . ')';
-        $diffAddresses = 'COUNTIFS(' . $aRange . ',' . $a . ',' . $oRange . ',"<>"&' . $o . ',' . $oRange . ',"<>")';
-
         $formula = '"OK"';
         $checks = [
-            $n . '=""'                                         => 'Missing Income',
-            'AND(' . $a . '<>"",' . $diffAddresses . '>0)'     => 'Multiple Addresses in Family',
+            'AND(' . $b . '="Head",' . $p . '="")'            => 'Card Readiness: Missing Barangay',
+            'AND(' . $b . '="Head",' . $o . '="")'            => 'Card Readiness: Missing Address',
+            'AND(' . $b . '="Head",' . $j . '="")'            => 'Card Readiness: Missing Contact Number',
+            'AND(' . $b . '="Head",' . $h . '="")'            => 'Card Readiness: Missing Sex',
+            'AND(' . $b . '="Head",' . $g . '="")'            => 'Card Readiness: Missing Birthday',
             'AND(' . $a . '<>"",' . $heads . '>1)'             => 'Multiple Heads (Same Family)',
             'AND(' . $a . '<>"",' . $diffLastNameHeads . '>0)' => 'Duplicate QR (Multiple Families)',
             'AND(' . $a . '<>"",' . $heads . '=0)'             => 'No Head in Family',
             $d . '=""'                                         => 'Missing FirstName',
             $c . '=""'                                         => 'Missing LastName',
-            $b . '=""'                                         => 'Missing Relationship',
             $a . '=""'                                         => 'Missing QR',
         ];
 
@@ -410,11 +407,16 @@ class FamilyExcelTemplate
         foreach (self::COLUMNS as $heading) {
             $letter = $this->columnLetter($index);
             $cell = $letter . self::HEADER_ROW;
-            $display = $heading . (in_array($heading, self::ALWAYS_REQUIRED, true) ? ' *' : '');
+            $display = $heading
+                . (in_array($heading, self::MUST_FIX_FIELDS, true) ? ' *' : '')
+                . (in_array($heading, self::HEAD_CARD_FIELDS, true) ? ' †' : '');
             $sheet->setCellValue($cell, $display);
 
-            if (in_array($heading, self::HEAD_REQUIRED, true)) {
-                $sheet->getComment($cell)->getText()->createTextRun('Required for the Head of family row.');
+            if (in_array($heading, self::MUST_FIX_FIELDS, true)) {
+                $sheet->getComment($cell)->getText()->createTextRun('Must fix if blank.');
+            }
+            if (in_array($heading, self::HEAD_CARD_FIELDS, true)) {
+                $sheet->getComment($cell)->getText()->createTextRun('Head Card Readiness warning if blank. Members do not need this card field.');
             }
 
             $index++;

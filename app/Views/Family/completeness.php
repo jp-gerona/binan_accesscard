@@ -1,161 +1,85 @@
 <?php
 /**
- * Data Completeness body (Profiling > Data Completeness).
+ * Card Readiness body (Profiling > Card Readiness).
  *
- * Rendered inside layout.php as the `records-completeness` page body. Data
- * comes from DashboardPageBuilder::buildCompletenessViewData(): the tiles
- * describe the whole queue, the table honours ?barangay= and ?field=, and the
- * download link carries the same filters.
+ * Active family heads appear once when a card-required value is absent. The
+ * builder owns filtering and pagination, while this records view only renders
+ * its prepared rows and URLs.
  */
 
-$tiles          = (array) ($tiles ?? []);
-$families       = (array) ($families ?? []);
-$allFamilies    = (array) ($allFamilies ?? []);
-$filterBarangay = trim((string) ($filterBarangay ?? ''));
-$filterField    = trim((string) ($filterField ?? ''));
-$page           = max(1, (int) ($page ?? 1));
-$perPage        = max(1, (int) ($perPage ?? 25));
-$pageCount      = max(1, (int) ($pageCount ?? 1));
+$families        = (array) ($families ?? []);
+$allFamilies     = (array) ($allFamilies ?? []);
+$filterBarangay  = trim((string) ($filterBarangay ?? ''));
+$filterField     = trim((string) ($filterField ?? ''));
+$keyword         = trim((string) ($keyword ?? ''));
+$barangayOptions = (array) ($barangayOptions ?? []);
+$page            = max(1, (int) ($page ?? 1));
+$perPage         = max(1, (int) ($perPage ?? 25));
+$pageCount       = max(1, (int) ($pageCount ?? 1));
 
-// Mirrors DashboardPageBuilder::COMPLETENESS_LABELS plus the two head-only
-// labels, in display order. Kept in the view because the builder returns the
-// already-shaped families, not its label constants.
-$completenessLabels = [
-    'Birthday', 'Sex', 'Civil Status', 'Education', 'Job', 'Monthly Income',
-    'Address', 'Barangay',
-];
-
+$readinessLabels = ['Control Number', 'First Name', 'Last Name', 'Sex', 'Birthday', 'Address', 'Contact Number', 'Barangay'];
 $totalFamilies = count($allFamilies);
-$fromRecord    = $totalFamilies === 0 ? 0 : (($page - 1) * $perPage) + 1;
-$toRecord      = min($totalFamilies, $page * $perPage);
+$fromRecord = $totalFamilies === 0 ? 0 : (($page - 1) * $perPage) + 1;
+$toRecord = min($totalFamilies, $page * $perPage);
 
-$downloadQuery = http_build_query(array_filter([
-    'field'    => $filterField,
-    'barangay' => $filterBarangay,
-], static fn ($value): bool => $value !== ''));
-$downloadUrl = site_url('records/completeness/download') . ($downloadQuery === '' ? '' : '?' . $downloadQuery);
+$query = static function (array $params): string {
+    $query = http_build_query(array_filter($params, static fn ($value): bool => $value !== ''));
 
-$pageUrl = static function (int $targetPage) use ($filterField, $filterBarangay): string {
-    $params = array_filter([
-        'field'    => $filterField,
+    return $query === '' ? '' : '?' . $query;
+};
+$downloadUrl = site_url('records/completeness/download') . $query([
+    'q' => $keyword, 'field' => $filterField, 'barangay' => $filterBarangay,
+]);
+$pageUrl = static function (int $targetPage) use ($keyword, $filterField, $filterBarangay, $query): string {
+    return site_url('records/completeness') . $query([
+        'q' => $keyword,
+        'field' => $filterField,
         'barangay' => $filterBarangay,
-        'page'     => $targetPage > 1 ? (string) $targetPage : '',
-    ], static fn ($value): bool => $value !== '');
-
-    return site_url('records/completeness') . ($params === [] ? '' : '?' . http_build_query($params));
+        'page' => $targetPage > 1 ? (string) $targetPage : '',
+    ]);
 };
 
-$tileCards = [
-    ['label' => 'Families with gaps', 'value' => (int) ($tiles['families'] ?? 0)],
-    ['label' => 'Families with head gaps', 'value' => (int) ($tiles['headGaps'] ?? 0)],
-];
-foreach (($tiles['byField'] ?? []) as $label => $count) {
-    $tileCards[] = ['label' => (string) $label, 'value' => (int) $count];
+$fieldOptions = [['value' => '', 'label' => 'All missing fields', 'default' => true, 'checked' => $filterField === '']];
+foreach ($readinessLabels as $label) {
+    $fieldOptions[] = ['value' => $label, 'label' => $label, 'pill' => $label, 'checked' => $filterField === $label];
 }
+$barangayFilterOptions = [['value' => '', 'label' => 'All barangays', 'default' => true, 'checked' => $filterBarangay === '']];
+foreach ($barangayOptions as $barangay) {
+    $barangay = trim((string) $barangay);
+    if ($barangay !== '') {
+        $barangayFilterOptions[] = ['value' => $barangay, 'label' => $barangay, 'pill' => $barangay, 'checked' => $filterBarangay === $barangay];
+    }
+}
+$exportAction = '<a class="' . btn('generate') . ' flex-fill" href="' . esc($downloadUrl, 'attr') . '"><i class="bi bi-file-earmark-arrow-down me-1" aria-hidden="true"></i>Export</a>';
 ?>
-<div class="row row-cols-2 row-cols-md-4 g-3 kpi-row mb-4">
-  <?php foreach ($tileCards as $tile): ?>
-  <div class="col">
-    <div class="card kpi-card h-100">
-      <div class="card-body">
-        <p class="kpi-label"><?= esc($tile['label']) ?></p>
-        <p class="kpi-value"><?= esc(number_format($tile['value'])) ?></p>
-      </div>
-    </div>
-  </div>
-  <?php endforeach; ?>
-</div>
+<?= view('components/toolbar', [
+    'formAction' => site_url('records/completeness'),
+    'formAria' => 'Card Readiness search and filters',
+    'searchPlaceholder' => 'Search all card readiness records...',
+    'keyword' => $keyword,
+    'pillsId' => 'cardReadinessFilterPills',
+    'narrow' => true,
+    'actionsHtml' => $exportAction,
+    'filterGroups' => [
+        ['name' => 'barangay', 'label' => 'Barangay', 'type' => 'radio', 'scroll' => true, 'options' => $barangayFilterOptions],
+        ['name' => 'field', 'label' => 'Missing card field', 'type' => 'radio', 'scroll' => true, 'options' => $fieldOptions],
+    ],
+]) ?>
 
-<form class="row g-2 align-items-end mb-3" method="get" action="<?= esc(site_url('records/completeness'), 'attr') ?>" role="search" aria-label="Data Completeness filters">
-  <div class="col-12 col-md-4">
-    <label class="form-label small text-muted fw-semibold mb-1" for="completenessBarangay">Barangay</label>
-    <input type="text" class="form-control" id="completenessBarangay" name="barangay" value="<?= esc($filterBarangay, 'attr') ?>" placeholder="Barangay">
-  </div>
-  <div class="col-12 col-md-4">
-    <label class="form-label small text-muted fw-semibold mb-1" for="completenessField">Field</label>
-    <select class="form-select" id="completenessField" name="field">
-      <option value="">All fields</option>
-      <?php foreach ($completenessLabels as $label): ?>
-      <option value="<?= esc($label, 'attr') ?>" <?= ($filterField === $label) ? 'selected' : '' ?>><?= esc($label) ?></option>
-      <?php endforeach; ?>
-    </select>
-  </div>
-  <div class="col-12 col-md-auto">
-    <button class="btn btn-primary" type="submit"><i class="bi bi-funnel" aria-hidden="true"></i> Filter</button>
-  </div>
-</form>
-
-<section class="card batch-card mb-4">
-  <div class="card-body">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-      <h2 class="batch-pane-title mb-0">Data Completeness</h2>
-      <a class="btn btn-sm btn-outline-primary" href="<?= esc($downloadUrl, 'attr') ?>">
-        <i class="bi bi-file-earmark-arrow-down me-1" aria-hidden="true"></i>Download
-      </a>
+<section class="card batch-card card-readiness-records">
+    <div class="card-body">
+        <h2 class="batch-pane-title">Card Readiness</h2>
+        <?= view('Family/completeness-table', compact('families', 'filterBarangay', 'filterField', 'keyword', 'perPage')) ?>
+        <div class="mt-3 small text-muted">
+            <?= view('components/table_footer', [
+                'fromRecord' => $fromRecord,
+                'toRecord' => $toRecord,
+                'totalRows' => $totalFamilies,
+                'page' => $page,
+                'totalPages' => $pageCount,
+                'pageUrl' => $pageUrl,
+                'entityLabel' => 'heads',
+            ]) ?>
+        </div>
     </div>
-    <div class="table-responsive">
-      <table class="table manage-record-table align-middle w-100 mb-0" id="completenessTable">
-        <thead class="table-light">
-        <tr>
-          <th class="fw-semibold small text-center">QR</th>
-          <th class="fw-semibold small">HEAD</th>
-          <th class="fw-semibold small">BARANGAY</th>
-          <th class="fw-semibold small text-center">MEMBERS</th>
-          <th class="fw-semibold small">HEAD GAPS</th>
-          <th class="fw-semibold small">MEMBERS WITH GAPS</th>
-        </tr>
-        </thead>
-        <tbody>
-        <?php foreach ($families as $family): ?>
-          <tr>
-            <td class="text-center text-nowrap"><?= esc(($family['qr'] ?? null) !== null ? (string) $family['qr'] : '-') ?></td>
-            <td><a href="<?= esc(site_url('records/' . (int) ($family['headID'] ?? 0)), 'attr') ?>"><?= esc((string) ($family['head'] ?? '-')) ?></a></td>
-            <td><?= esc((string) ($family['barangay'] ?? '')) ?></td>
-            <td class="text-center"><?= esc((string) ($family['memberCount'] ?? 0)) ?></td>
-            <td>
-              <?php if (($family['headGaps'] ?? []) === []): ?>
-                <span class="text-muted">None</span>
-              <?php else: ?>
-                <?php foreach ($family['headGaps'] as $gap): ?>
-                  <span class="badge rounded-pill text-bg-danger"><?= esc((string) $gap) ?></span>
-                <?php endforeach; ?>
-              <?php endif; ?>
-            </td>
-            <td>
-              <?php if (($family['members'] ?? []) === []): ?>
-                <span class="text-muted">None</span>
-              <?php else: ?>
-                <?php foreach ($family['members'] as $member): ?>
-                  <div class="mb-1">
-                    <strong><?= esc((string) ($member['name'] ?? '-')) ?></strong>
-                    <small class="text-muted d-block"><?= esc((string) ($member['relationship'] ?? 'MEMBER')) ?></small>
-                    <?php foreach (($member['gaps'] ?? []) as $gap): ?>
-                      <span class="badge rounded-pill text-bg-warning text-dark"><?= esc((string) $gap) ?></span>
-                    <?php endforeach; ?>
-                  </div>
-                <?php endforeach; ?>
-              <?php endif; ?>
-            </td>
-          </tr>
-        <?php endforeach; ?>
-        <?php if ($families === []): ?>
-          <tr><td colspan="6" class="text-muted">No families with missing profile data.</td></tr>
-        <?php endif; ?>
-        </tbody>
-      </table>
-    </div>
-    <?php if ($totalFamilies >= 0): ?>
-    <div class="mt-3 small text-muted">
-      <?= view('components/table_footer', [
-          'fromRecord'  => $fromRecord,
-          'toRecord'    => $toRecord,
-          'totalRows'   => $totalFamilies,
-          'page'        => $page,
-          'totalPages'  => $pageCount,
-          'pageUrl'     => $pageUrl,
-          'entityLabel' => 'families',
-      ]) ?>
-    </div>
-    <?php endif; ?>
-  </div>
 </section>

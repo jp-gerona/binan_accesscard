@@ -9,8 +9,7 @@
  *
  *   family-import-100A.xlsx      — 100 people, clean valid families (import first).
  *   family-import-100B.xlsx      — 100 people, clean valid families, no overlap with A.
- *   family-import-ALL-ERRORS.xlsx — every remaining blocking code plus warning coverage,
- *                                   including incomplete profile fields.
+ *   family-import-ALL-ERRORS.xlsx: every remaining blocking code plus warning coverage.
  *   family-import-C-10k-clean.xlsx  — 10,000 people, all warning-free (bulk load test).
  *   family-import-D-10k-errors.xlsx — 10,000 people, ~1,000 with a seeded field-level issue,
  *                                     the rest warning-free (bulk load + error-handling test).
@@ -23,13 +22,13 @@
  * first, THEN ALL-ERRORS. The non-DB codes fire on their own.
  *
  * Expected ALL-ERRORS seed coverage:
- *   blocking: QR-TAKEN x1, HEAD-MULTI x1, FP-ADDR x1, HEAD-NONE x1,
+ *   blocking: QR-TAKEN x1, HEAD-MULTI x1, HEAD-NONE x1,
  *     REQUIRED x2, LENGTH x1, QR-01 x1, QR-FORMAT x1, QR-05 x1,
- *     QR-07 x1, QR-08 x1, QR-12 x1.
+ *     QR-07 x1, QR-08 x1, QR-12 x1, BRGY x1, SEX x1, BDAY x1,
+ *     BDAY-FUTURE x1, SERVICE x1, CONTACT x1, SECTOR x1.
  *   warnings: DUP-EXISTS x2, DUP-DIFF x1, ADD-MEMBER x1, DUP-DB x1,
- *     INCOMPLETE x6, SERVICE x1, BRGY x1, SEX x1, BDAY x1, BDAY-FUTURE x1,
- *     INCOME x1, CONTACT x1, SUFFIX x1, BDAY-RANGE x1, SECTOR x1,
- *     DUP-PERSON x1, QR-CONTIG x1, QR-11 x1.
+ *     INCOME x1, SUFFIX x1, BDAY-RANGE x1, DUP-PERSON x1, QR-CONTIG x1,
+ *     QR-11 x1.
  *   row counts: 100A=100, 100B=100, ALL-ERRORS=41, C=10000, D=10000.
  */
 
@@ -96,11 +95,12 @@ function memberDefaults(string $rel): array
 }
 
 /**
- * Populates the OPTIONAL columns that would otherwise be blank — Sector, Services, Contact
- * number, Religion — so the test data reads as fully filled. Sector/Services are aligned VALID
- * pairs (children get Bata services), never unknown codes, so the clean files stay error-free.
- * Cells already set (e.g. an intentional 'ZZZ' service or '12345' contact in the error file)
- * are left untouched, so seeded errors survive.
+ * Populates selected optional columns that would otherwise be blank: Sector, Services, Contact
+ * Number, and Religion. This keeps clean-fixture rows representative while other fixtures
+ * exercise the importer's quiet defaults. Sector and service values are aligned valid pairs
+ * (children get Bata services), never invented assignments or unknown codes. Cells already set
+ * (for example, an intentional 'ZZZ' service or '12345' contact in the error file) are left
+ * untouched, so seeded errors survive.
  *
  * @param list<array> $rows
  * @return list<array>
@@ -278,24 +278,24 @@ function errorRows(): array
         mkRow('9100001', 'Head', 'Torres', 'Ben', 'Uy', '', '11-05-1970', 'Male', 'M - Married', '09171230001', 'Roman Catholic', 'HS - High School', 'Driver', 'PHP 13,001 - 18,000', '5 Bonifacio St.', 'Malaban'),
         mkRow('9100001', 'Head', 'Torres', 'Cora', 'Uy', '', '12-08-1972', 'Female', 'M - Married', '09171230002', 'Roman Catholic', 'HS - High School', 'Vendor', 'PHP 13,001 - 18,000', '5 Bonifacio St.', 'Malaban'),
 
-        // FP-ADDR: one QR, one Head, two households (address AND barangay differ).
+        // Member household cells are ignored, so this remains one QR household.
         mkRow('9100002', 'Head', 'Aquino', 'Pedro', 'Roque', '', '04-04-1965', 'Male', 'M - Married', '09171230003', 'Roman Catholic', 'E - Elementary', 'Vendor', 'Below PHP 8,000', '1 Acacia St.', 'Timbao'),
         mkRow('9100002', 'Spouse', 'Bautista', 'Elena', 'Diaz', '', '09-09-1969', 'Female', 'W - Widow / Widower', '09171230004', 'Roman Catholic', 'E - Elementary', 'Vendor', 'Below PHP 8,000', '99 Ipil St.', 'De La Paz'),
 
-        // HEAD-NONE: new QR, no Head row. The address-carrier (complete data) is the likely head.
+        // HEAD-NONE: new QR, no Head row. The reviewer must choose the Head.
         mkRow('9100003', 'Spouse', 'Dela Rosa', 'Rosa', 'Cruz', '', '06-02-1978', 'Female', 'M - Married', '09171230005', 'Roman Catholic', 'HS - High School', 'Homemaker', 'No regular income', '88 Molave St.', 'Poblacion'),
         mkRow('9100003', 'Child', 'Dela Rosa', 'Mark', 'Cruz', '', '01-30-2010', 'Male', 'S - Single', '', '', 'E - Elementary', 'Student', 'No regular income', '', ''),
 
-        // ===== YELLOW: field-level warnings (cell filled but invalid) ==============
+        // ===== RED: field-level validation ==========================================
         // SEX invalid (all other dropdowns valid).
         mkRow('9100004', 'Head', 'Lopez', 'Andres', 'Vega', '', '02-02-1980', 'Malee', 'M - Married', '09171230006', 'Roman Catholic', 'HS - High School', 'Factory Worker', 'PHP 8,000 - 13,000', '77 Sampaguita St.', 'Zapote'),
         // BDAY invalid date.
         mkRow('9100005', 'Head', 'Ramos', 'Nilo', 'Cruz', '', '31-31-2000', 'Male', 'S - Single', '09171230007', 'Roman Catholic', 'HS - High School', 'Driver', 'PHP 8,000 - 13,000', '4 Narra St.', 'Malaban'),
-        // BDAY-FUTURE future date (warns, imports blank).
+        // BDAY-FUTURE future date blocks import.
         mkRow('9100014', 'Head', 'Ramos', 'Iris', 'Lim', '', '01-01-2050', 'Female', 'S - Single', '09171230028', 'Roman Catholic', 'HS - High School', 'Student', 'No regular income', '4 Narra St.', 'Malaban'),
         // INCOME not a bracket/number (warning; currency-prefixed values such as P3000 pass).
         mkRow('9100006', 'Head', 'Flores', 'Rene', 'Lim', '', '03-03-1979', 'Male', 'M - Married', '09171230008', 'Roman Catholic', 'HS - High School', 'Vendor', 'plenty', '9 Ilang St.', 'Ganado'),
-        // SERVICE unknown code (typo aliases are accepted, unknown tokens warn and skip).
+        // SERVICE unknown code blocks until the reviewer selects a listed code or clears it.
         mkRow('9100007', 'Head', 'Castro', 'Fely', 'Go', '', '04-04-1982', 'Female', 'S - Single', '09171230009', 'Roman Catholic', 'CG - College Graduate', 'Teacher', 'PHP 18,001 - 25,000', '3 Ipil St.', 'Platero', '', 'ZZZ'),
         // ===== RED: over-long value ================================================
         // LENGTH: first name over 100 chars.
@@ -313,9 +313,7 @@ function errorRows(): array
         mkRow('#REF!',      'Head', 'Erroro',  'Rene', 'Uy', '', '05-09-1985', 'Male',   'S - Single', '09171230015', 'Roman Catholic', 'HS - High School', 'Driver', 'PHP 8,000 - 13,000', '8 Narra St.', 'Malaban'),  // QR-08
         mkRow('=A4',        'Head', 'Formula', 'Fely', 'Go', '', '05-10-1985', 'Female', 'S - Single', '09171230016', 'Roman Catholic', 'HS - High School', 'Vendor', 'PHP 8,000 - 13,000', '9 Narra St.', 'Malaban'),  // QR-12
 
-        // ===== YELLOW: field-level warnings (complete data) =======================
-        // Five warnings on one row: BRGY (unofficial), CONTACT (short), SUFFIX
-        // ("Junior" -> "Jr"), BDAY-RANGE (born 1850), and SECTOR (unrecognized token).
+        // Mixed field outcomes: BRGY, CONTACT, and SECTOR block; SUFFIX and BDAY-RANGE warn.
         mkRow('9100009', 'Head', 'Ocampo', 'Ignacio', 'Reyes', 'Junior', '01-01-1850', 'Male', 'W - Widow / Widower', '12345', 'Roman Catholic', 'E - Elementary', 'Retired', 'Below PHP 8,000', '10 Kalachuchi St.', 'Barangay Wakanda', 'ZZ9'),
 
         // ===== YELLOW: incomplete profile fields ================================
@@ -360,16 +358,16 @@ function corruptRows(array $rows, int $count): array
     // [column index, bad value] — one cell each. Cols: 3=FirstName 5=Suffix 6=Birthday 7=Sex
     // 9=Contact 13=MonthlyIncome 15=Barangay 17=Services.
     $corruptions = [
-        [7, 'Malee'],              // SEX invalid warning
-        [6, '31-31-2000'],         // BDAY invalid date warning
+        [7, 'Malee'],              // SEX invalid blocker
+        [6, '31-31-2000'],         // BDAY invalid date blocker
         [6, '01-01-1850'],         // BDAY-RANGE (implausibly old) warning
         [13, 'plenty'],            // INCOME invalid warning
-        [9, '12345'],              // CONTACT too short warning
-        [15, 'Barangay Wakanda'],  // BRGY not an official barangay warning
+        [9, '12345'],              // CONTACT too short blocker
+        [15, 'Barangay Wakanda'],  // BRGY not an official barangay blocker
         [5, 'Junior'],             // SUFFIX not a dropdown code warning
         [3, $longName],            // LENGTH (first name > 100 chars) blocker
-        [17, 'ZZZ'],               // SERVICE unknown code warning
-        [13, ''],                  // INCOMPLETE (blank profile field) warning
+        [17, 'ZZZ'],               // SERVICE unknown code blocker
+        [13, 'plenty'],            // INCOME invalid warning
         [3, ''],                   // REQUIRED (blank required first name) blocker
     ];
 

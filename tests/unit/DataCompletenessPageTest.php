@@ -8,9 +8,7 @@ use Tests\Support\Database\DumpSchema;
 use Tests\Support\Database\ReferentialFixture;
 
 /**
- * The Data Completeness page: DashboardPageBuilder::buildCompletenessViewData()
- * turns MemberModel::completenessRows() into the chase list the view renders,
- * and Family/completeness.php renders the table, filters and download link.
+ * The Card Readiness page shapes only heads with card-required field gaps.
  */
 final class DataCompletenessPageTest extends CIUnitTestCase
 {
@@ -26,113 +24,77 @@ final class DataCompletenessPageTest extends CIUnitTestCase
         parent::tearDown();
     }
 
-    /**
-     * Three heads: one complete, one missing only salary, one whose member is
-     * missing only education. The head-gap family must sort first.
-     */
-    private function seedCompletenessQueue(): void
+    public function testCompleteOptionalProfileFieldsDoNotAffectReadiness(): void
     {
         $db = db_connect();
-
         $db->table('barangay')->insert(['barangayID' => 1, 'name' => 'SANTO TOMAS']);
-        // A soft-deleted barangay must not label a family: nameMap() filters
-        // dt_deleted out, so a head pointing at it gets a blank barangay label.
-        $db->table('barangay')->insert([
-            'barangayID' => 2,
-            'name'       => 'ARCHIVED VILLAGE',
-            'dt_deleted' => '2026-01-01 00:00:00',
-        ]);
-        ReferentialFixture::heads($db, [1, 2, 3]);
+        ReferentialFixture::heads($db, [1]);
+        ReferentialFixture::cards($db, [1], 6000);
+        $db->table('member')->update([
+            'sex' => 'MALE', 'birthday' => '1990-01-01', 'address' => 'SAMPLE STREET',
+            'contactnumber' => '09171234567', 'barangayID' => 1,
+            'civilstatus' => null, 'education' => 'NOT PROVIDED', 'job' => 'NOT PROVIDED', 'salary' => null,
+        ], ['memberID' => 1]);
 
-        $complete = [
-            'address'     => 'SAMPLE STREET',
-            'barangayID'  => 1,
-            'birthday'    => '1990-01-01',
-            'sex'         => 'MALE',
-            'civilstatus' => 'MARRIED',
-            'education'   => 'COLLEGE',
-            'job'         => 'EMPLOYED',
-            'salary'      => 5000,
-        ];
+        $data = $this->builder()->buildCompletenessViewData();
 
-        $db->table('member')->update($complete, ['memberID' => 1]);
-        // Head 2 lives in the archived barangay, so its family must label ''.
-        $db->table('member')->update(array_merge($complete, ['salary' => null, 'barangayID' => 2]), ['memberID' => 2]);
-        $db->table('member')->update($complete, ['memberID' => 3]);
-
-        // Head 2's only member is complete, so the family's member list stays empty.
-        $db->table('member')->insert([
-            'memberID'     => 4,
-            'headID'       => 2,
-            'firstname'    => 'BOY',
-            'middlename'   => '',
-            'lastname'     => 'FIXTURE',
-            'relationship' => 'CHILD',
-            'birthday'     => '2000-01-01',
-            'sex'          => 'MALE',
-            'civilstatus'  => 'SINGLE',
-            'education'    => 'ELEMENTARY',
-            'job'          => 'STUDENT',
-            'salary'       => 0,
-        ]);
-
-        // Head 3's member is missing only education.
-        $db->table('member')->insert([
-            'memberID'     => 5,
-            'headID'       => 3,
-            'firstname'    => 'ANA',
-            'middlename'   => '',
-            'lastname'     => 'FIXTURE',
-            'relationship' => 'CHILD',
-            'birthday'     => '2005-05-05',
-            'sex'          => 'FEMALE',
-            'civilstatus'  => 'SINGLE',
-            'education'    => null,
-            'job'          => 'STUDENT',
-            'salary'       => 0,
-        ]);
-
-        $db->table('qr_control')->insert(['control_no' => 6002, 'headID' => 2]);
-        $db->table('qr_control')->insert(['control_no' => 6003, 'headID' => 3]);
+        $this->assertCount(0, $data['families']);
+        $this->assertArrayNotHasKey('tiles', $data);
     }
 
-    public function testBuilderShapesFamiliesWithHeadGapsFirst(): void
+    public function testBuilderProvidesHeadRowsFiltersAndPagination(): void
     {
-        $this->seedCompletenessQueue();
+        $db = db_connect();
+        $db->table('barangay')->insert(['barangayID' => 1, 'name' => 'SANTO TOMAS']);
+        ReferentialFixture::heads($db, [1, 2]);
+        ReferentialFixture::cards($db, [1, 2], 6000);
+        $complete = [
+            'sex' => 'MALE', 'birthday' => '1990-01-01', 'address' => 'SAMPLE STREET',
+            'contactnumber' => '09171234567', 'barangayID' => 1,
+        ];
+        $db->table('member')->update(array_merge($complete, ['contactnumber' => null]), ['memberID' => 1]);
+        $db->table('member')->update(array_merge($complete, ['address' => null]), ['memberID' => 2]);
 
-        $builder = new DashboardPageBuilder(service('request'));
-        $data = $builder->buildCompletenessViewData();
+        $data = $this->builder()->buildCompletenessViewData();
 
-        $this->assertSame(2, $data['tiles']['families']);
-        $this->assertSame(1, $data['tiles']['headGaps']);
-        $this->assertSame(6002, $data['families'][0]['qr']);
-        $this->assertSame(['Monthly Income'], $data['families'][0]['headGaps']);
-        $this->assertSame([], $data['families'][0]['members']);
-        // The archived barangay's name must not leak into the shaped label.
-        $this->assertSame('', $data['families'][0]['barangay']);
-        $this->assertSame('Education', $data['families'][1]['members'][0]['gaps'][0]);
-        // A live barangay still labels its family as before.
-        $this->assertSame('SANTO TOMAS', $data['families'][1]['barangay']);
-        // Member count includes the head and complete active members omitted from
-        // the missing-member detail list.
-        $this->assertSame(2, $data['families'][0]['memberCount']);
-        $this->assertSame(2, $data['families'][1]['memberCount']);
+        $this->assertSame([1, 2], array_map('intval', array_column($data['families'], 'memberID')));
+        $this->assertSame(['Contact Number'], $data['families'][0]['missing']);
+        $this->assertSame('SANTO TOMAS', $data['families'][0]['barangay']);
+        $this->assertSame(25, $data['perPage']);
+        $this->assertSame(1, $data['pageCount']);
     }
 
-    /**
-     * View structure only; the file is read, not rendered, so the page can be
-     * asserted without going through the shell. Mirrors FamilyDataTableTest's
-     * file-reading style.
-     */
-    public function testCompletenessViewRendersTableFiltersAndDownload(): void
+    public function testCardReadinessViewRendersRecordsTableFiltersAndDownload(): void
     {
         $view = (string) file_get_contents(APPPATH . 'Views/Family/completeness.php');
+        $table = (string) file_get_contents(APPPATH . 'Views/Family/completeness-table.php');
 
-        $this->assertStringContainsString('id="completenessTable"', $view);
+        $this->assertStringContainsString('Card Readiness', $view);
         $this->assertStringContainsString('records/completeness/download', $view);
-        $this->assertStringContainsString('name="field"', $view);
-        $this->assertStringContainsString('>MEMBERS</th>', $view);
-        $this->assertStringContainsString("site_url('records/' . (int) (\$family['headID'] ?? 0))", $view);
-        $this->assertStringNotContainsString('<?= $', $view);
+        $this->assertStringContainsString('<section class="card batch-card card-readiness-records">', $view);
+        $this->assertStringContainsString('<h2 class="batch-pane-title">Card Readiness</h2>', $view);
+        $this->assertStringContainsString("view('Family/completeness-table'", $view);
+        $this->assertStringContainsString('id="completenessTable"', $table);
+        $this->assertStringContainsString('>CONTROL NUMBER</th>', $table);
+        $this->assertStringContainsString('>EDIT FAMILY</th>', $table);
+        $this->assertStringNotContainsString('kpi-row', $view);
+        $this->assertStringNotContainsString('tileCards', $view);
+        $this->assertStringNotContainsString("view('components/card'", $view);
+        $this->assertStringNotContainsString('<?= $', $table);
+    }
+
+    public function testCardReadinessDownloadUsesTheCardReadinessFilename(): void
+    {
+        $response = $this->builder()->completenessDownloadResponse();
+
+        $this->assertSame(
+            'attachment; filename="card-readiness-' . date('Y-m-d') . '.xlsx"',
+            $response->getHeaderLine('Content-Disposition'),
+        );
+    }
+
+    private function builder(): DashboardPageBuilder
+    {
+        return new DashboardPageBuilder(service('request'));
     }
 }

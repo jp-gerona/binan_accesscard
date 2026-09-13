@@ -76,7 +76,7 @@ final class NavigationManifestTest extends CIUnitTestCase
         ));
 
         $this->assertCount(1, $links);
-        $this->assertSame('Data Completeness', $links[0]['label']);
+        $this->assertSame('Card Readiness', $links[0]['label']);
         $this->assertSame('Profiling', $links[0]['heading']);
         $this->assertSame(['Developer', 'Admin', 'Encoder'], $links[0]['roles']);
         $this->assertSame('records/completeness', $links[0]['route']);

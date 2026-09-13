@@ -13,6 +13,7 @@ use App\Libraries\ImportReviewQuery;
 use App\Libraries\ImportReviewResolution;
 use App\Libraries\RoleAccess;
 use App\Models\Families\MemberModel;
+use App\Models\Families\FamilyFormOptionsModel;
 use App\Models\Jobs\JobQueueModel;
 use CodeIgniter\HTTP\RedirectResponse;
 use Config\IdleTimeout;
@@ -300,12 +301,54 @@ class FamilyImportController extends BaseController
             'bodyData'   => [
                 'jobId'   => $jobId,
                 'summary' => (new ImportReviewPresenter())->build($loaded['result']),
-                // Dropdown columns (Sex, Barangay, Civil Status, …) so an inline cell edit
-                // offers the exact same choices as the Excel template's validation lists.
-                'fieldOptions' => (new FamilyExcelTemplate())->dropdownOptions(),
+                'fieldOptions' => $this->reviewFieldOptions(),
             ],
             'idleTimeoutSeconds' => (new IdleTimeout())->seconds,
         ]);
+    }
+
+    /**
+     * Review-only controls use the active reference rows and the manual form's option
+     * sources. The importer still revalidates every posted value before it is staged.
+     */
+    private function reviewFieldOptions(): array
+    {
+        $formOptions = new FamilyFormOptionsModel();
+        $options     = $formOptions->getOptions();
+        $static      = $formOptions->staticOptionLists();
+        $references  = static function (array $rows): array {
+            $out = [];
+
+            foreach ($rows as $row) {
+                $code = trim((string) ($row['shortcode'] ?? ''));
+                $name = trim((string) ($row['name'] ?? ''));
+
+                if ($code === '') {
+                    continue;
+                }
+
+                $out[] = [
+                    'value' => $code,
+                    'label' => $name === '' ? $code : $code . ' - ' . $name,
+                ];
+            }
+
+            return $out;
+        };
+
+        return [
+            'relationship'  => array_merge(['HEAD'], (array) ($static['relationshipOptions'] ?? [])),
+            'suffix'        => (array) ($static['suffixOptions'] ?? []),
+            'sex'           => (array) ($static['sexOptions'] ?? []),
+            'civilstatus'   => (array) ($static['civilOptions'] ?? []),
+            'religion'      => (array) ($static['religionOptions'] ?? []),
+            'education'     => (array) ($static['educationOptions'] ?? []),
+            'job'           => (array) ($static['jobOptions'] ?? []),
+            'monthlyincome' => (array) ($static['incomeOptions'] ?? []),
+            'barangay'      => (array) ($static['barangayOptions'] ?? []),
+            'sector'        => $references((array) ($options['sectors'] ?? [])),
+            'services'      => $references((array) ($options['services'] ?? [])),
+        ];
     }
 
     /**

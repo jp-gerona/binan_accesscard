@@ -162,20 +162,19 @@ URL. Viewer accounts receive a 404 for a direct media URL and their profile show
 no media panel. Chapter 05 explains the worker schedule, and chapter 06 covers
 folder permissions and matched backups.
 
-## The Data Completeness queue
+## Card Readiness
 
-Records are not always complete on the first pass. An Excel import (chapter 12)
-saves rows even when optional-but-important fields are blank: the family lands on
-the Data Completeness queue instead of being rejected. The queue lives at
-`records/completeness` and lists every family with at least one blank field the
-city still needs to collect.
+Card Readiness is the follow-up queue at `records/completeness`. It lists active
+Heads whose control number, identity, sex, birthday, household address, contact
+number, or barangay is missing. Profile fields such as Civil Status, Education,
+Job, Religion, and Monthly Income do not decide card readiness.
 
 The queue is part of the records workflow, not a separate module. Staff open a
-family from the queue, fill the missing fields through the same family form used
-for edits, and the family drops off the queue once the last blank is gone. The
-download link at `records/completeness/download` produces an `.xlsx` checklist
-for barangay follow-up. Chapter 12 covers which import warnings send a family
-here and how the importer reports them.
+family from the queue, fill the missing card field through the same family form
+used for edits, and the Head drops off the queue when the card-readiness
+predicate is satisfied. The download link at `records/completeness/download`
+produces an `.xlsx` checklist for barangay follow-up. Chapter 12 covers the
+Head-only import warnings that send a family here.
 
 ## Every mutation writes an audit row
 

@@ -41,10 +41,10 @@ class ImportReviewPresenter
         'HEAD-MULTI' => ['label' => 'Multiple Heads (Same Family)', 'hint' => 'Only one person per family can be the Head.'],
         'FP-ADDR'    => ['label' => 'Multiple Addresses in Family', 'hint' => 'One QR = one household. Fix the mistyped QR, or give the other household its own QR.'],
         'REQUIRED'   => ['label' => 'Missing required value',      'hint' => 'Fill in the cell.'],
-        'INCOMPLETE' => ['label' => 'Missing value (imports blank)', 'hint' => 'Blank cells import as blank. The family is listed on the Data Completeness report until the data is collected.'],
-        'BDAY'       => ['label' => 'Invalid birthday',            'hint' => 'Could not be read; imports with a blank birthday. The family is listed on the Data Completeness report.'],
-        'SEX'        => ['label' => 'Invalid sex',                 'hint' => 'Not Male or Female; imports with no sex. The family is listed on the Data Completeness report.'],
-        'INCOME'     => ['label' => 'Invalid monthly income',      'hint' => 'Not a bracket or readable amount; imports with no income. The family is listed on the Data Completeness report.'],
+        'INCOMPLETE' => ['label' => 'Card Readiness: Missing value', 'hint' => 'Warning only: the blank value imports and the Head appears in Card Readiness until it is collected.'],
+        'BDAY'       => ['label' => 'Card Readiness: Invalid birthday', 'hint' => 'Warning only: the unreadable value imports blank and the Head appears in Card Readiness.'],
+        'SEX'        => ['label' => 'Card Readiness: Invalid sex', 'hint' => 'Warning only: not Male or Female, so the Head imports with no sex and appears in Card Readiness.'],
+        'INCOME'     => ['label' => 'Invalid monthly income',      'hint' => 'Warning only: correct it if the income is known.'],
         'SERVICE'    => ['label' => 'Invalid Service Code',        'hint' => 'The code is not on the Reference sheet. Choose a listed service code before importing.'],
         'LENGTH'     => ['label' => 'Value too long',              'hint' => 'Shorten it to fit the database limit.'],
         'AGE-ELIG'   => ['label' => 'Age eligibility mismatch',    'hint' => 'The person\'s age does not qualify for their assigned sector or service.'],
@@ -55,12 +55,12 @@ class ImportReviewPresenter
         'DUP-PERSON' => ['label' => 'Possible duplicate person',   'hint' => 'Same name, birthday and address as another row. Imports anyway - delete a row if it really is a duplicate.'],
         'DUP-ROW'    => ['label' => 'Duplicate Row',               'hint' => 'Choose the one complete duplicate row to keep.'],
         'DUP-QR-FAMILY' => ['label' => 'Duplicate QR (Multiple Families)', 'hint' => 'Correct the QR number for the second household.'],
-        'BRGY'       => ['label' => 'Barangay not recognised',     'hint' => 'Not an official Biñan barangay; imports with no barangay. The family is listed on the Data Completeness report.'],
+        'BRGY'       => ['label' => 'Card Readiness: Barangay not recognised', 'hint' => 'Warning only: not an official Biñan barangay, so the Head imports with no barangay and appears in Card Readiness.'],
         'SECTOR'     => ['label' => 'Invalid Sector Code',         'hint' => 'The code is not on the Reference sheet. Choose a listed sector code before importing.'],
-        'CONTACT'    => ['label' => 'Contact number format',       'hint' => 'Should start with 09 and be 11 digits. Imports as typed.'],
+        'CONTACT'    => ['label' => 'Invalid contact number',      'hint' => 'Must fix: enter a valid mobile or Biñan landline number before importing.'],
         'SUFFIX'     => ['label' => 'Suffix adjusted',             'hint' => 'Changed to the matching dropdown value, or left blank if it matches none.'],
         'BDAY-RANGE' => ['label' => 'Birthday out of range',       'hint' => 'Over 150 years ago. Imports as typed.'],
-        'BDAY-FUTURE' => ['label' => 'Future birthday (imports blank)', 'hint' => 'A future date cannot be stored; the birthday imports blank and the family is listed on the Data Completeness report.'],
+        'BDAY-FUTURE' => ['label' => 'Card Readiness: Future birthday', 'hint' => 'Warning only: a future date imports blank and the Head appears in Card Readiness.'],
         'QR-CONTIG'  => ['label' => 'Family rows not together',    'hint' => 'Warning only - the family imports, but check the grouping.'],
     ];
 
@@ -89,6 +89,7 @@ class ImportReviewPresenter
         $counts = is_array($result['counts'] ?? null) ? $result['counts'] : [];
         $rows   = is_array($result['rows'] ?? null) ? $result['rows'] : [];
         $discarded = is_array($result['discarded'] ?? null) ? $result['discarded'] : [];
+        $visibleErrors = $this->visibleErrorsForRows($errors, $rows);
 
         return [
             'file'   => (string) ($result['file'] ?? 'import.xlsx'),
@@ -101,14 +102,14 @@ class ImportReviewPresenter
                 'existing' => (int) ($counts['existing'] ?? 0),
                 'newFamilies' => max(0, (int) ($counts['families'] ?? 0) - (int) ($counts['existing'] ?? 0)),
                 'appends'  => (int) ($counts['appends'] ?? 0),
-                'blocking' => (int) ($counts['blocking'] ?? 0),
-                'warnings' => (int) ($counts['warnings'] ?? 0),
+                'blocking' => $this->countSeverity($visibleErrors, 'blocking'),
+                'warnings' => $this->countSeverity($visibleErrors, 'warning'),
                 'discarded' => count($discarded),
             ],
             // The codes actually present, so the filter dropdown offers only what
             // this file can be narrowed to.
-            'codes'       => $this->codesPresent($errors),
-            'fileNotices' => $this->fileNotices($errors),
+            'codes'       => $this->codesPresent($visibleErrors),
+            'fileNotices' => $this->fileNotices($visibleErrors),
         ];
     }
 
@@ -197,6 +198,7 @@ class ImportReviewPresenter
             $data     = is_array($entry['data'] ?? null) ? $entry['data'] : [];
             $qr       = trim((string) ($data['familyno'] ?? ''));
             $own      = $errorsByRow[$sheetRow] ?? [];
+            $own      = $this->visibleErrors($own, $data);
             $resolution = $discarded[$sheetRow] ?? null;
             $isDiscarded = is_array($resolution);
             $values = [
@@ -231,6 +233,70 @@ class ImportReviewPresenter
         }
 
         return $out;
+    }
+
+    /**
+     * Members inherit household address and barangay from their Head. Spreadsheet cells
+     * in those columns are intentionally ignored, so stale validation noise must not
+     * make a member look actionable in the review.
+     *
+     * @param list<array> $errors
+     * @param array<string, string> $data
+     * @return list<array>
+     */
+    private function visibleErrors(array $errors, array $data): array
+    {
+        if ($this->isHeadRow($data)) {
+            return $errors;
+        }
+
+        return array_values(array_filter($errors, static function (array $error): bool {
+            return ! in_array((string) ($error['field'] ?? ''), ['address', 'barangay'], true);
+        }));
+    }
+
+    /**
+     * Keeps page-level badges and filters aligned with the row-level visibility rule.
+     * File-level errors and errors on unknown rows remain visible because there is no
+     * member relationship with which to classify them as inherited household cells.
+     *
+     * @param list<array> $errors
+     * @param list<array> $rows
+     * @return list<array>
+     */
+    private function visibleErrorsForRows(array $errors, array $rows): array
+    {
+        $dataBySheetRow = [];
+
+        foreach ($rows as $row) {
+            $sheetRow = $row['sheetRow'] ?? null;
+            $data = $row['data'] ?? null;
+
+            if ($sheetRow !== null && is_array($data)) {
+                $dataBySheetRow[(int) $sheetRow] = $data;
+            }
+        }
+
+        $visible = [];
+
+        foreach ($errors as $error) {
+            $sheetRow = $error['sheetRow'] ?? null;
+            $data = $sheetRow === null ? null : ($dataBySheetRow[(int) $sheetRow] ?? null);
+
+            if ($data === null || $this->visibleErrors([$error], $data) !== []) {
+                $visible[] = $error;
+            }
+        }
+
+        return $visible;
+    }
+
+    /** @param list<array> $errors */
+    private function countSeverity(array $errors, string $severity): int
+    {
+        return count(array_filter($errors, static fn (array $error): bool =>
+            (($error['severity'] ?? 'blocking') === 'blocking' ? 'blocking' : 'warning') === $severity
+        ));
     }
 
     /**
@@ -447,7 +513,9 @@ class ImportReviewPresenter
                 ? 'Income'
                 : (self::FIELD_LABELS[$field] ?? 'value');
 
-            return 'Missing ' . $fieldLabel;
+            $isCardReadinessField = in_array($field, ['birthday', 'sex', 'address', 'contactnumber', 'barangay'], true);
+
+            return ($code === 'INCOMPLETE' && $isCardReadinessField ? 'Card Readiness: Missing ' : 'Missing ') . $fieldLabel;
         }
 
         return self::GROUPS[$code]['label'] ?? $code;

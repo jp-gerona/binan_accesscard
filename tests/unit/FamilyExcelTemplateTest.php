@@ -9,28 +9,24 @@ use PhpOffice\PhpSpreadsheet\Style\Fill;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 
 /**
- * Ver4 template coverage: the Families sheet's CHECK column carries the ten
- * approved preflight labels, stays Excel-only (never feeds the importer), and
- * colors Must fix problems red while incomplete-data output such as Missing
- * Income is yellow. The asterisk guidance keeps the completeness contract
- * explicit for workers.
+ * Ver4 template coverage: the Families sheet's CHECK column carries approved
+ * preflight labels, stays Excel-only (never feeds the importer), and
+ * colors Must fix problems red while Head card-readiness warnings are yellow.
+ * The guidance keeps the import contract explicit for workers.
  *
  * @internal
  */
 final class FamilyExcelTemplateTest extends CIUnitTestCase
 {
-    /** The ten approved Ver4 CHECK labels, exactly as the task brief lists them. */
+    /** The approved Ver4 CHECK labels for identity and household structure. */
     private const APPROVED_LABELS = [
         'OK',
         'Missing QR',
-        'Missing Relationship',
         'Missing LastName',
         'Missing FirstName',
-        'Missing Income',
         'No Head in Family',
         'Multiple Heads (Same Family)',
         'Duplicate QR (Multiple Families)',
-        'Multiple Addresses in Family',
     ];
 
     /** CHECK is the 19th column, one past the 18 data columns. */
@@ -64,32 +60,32 @@ final class FamilyExcelTemplateTest extends CIUnitTestCase
     public function testRedFormattingAppliesToMustFixOutput(): void
     {
         $red = $this->matchingRule(self::CHECK_RANGE, static fn (string $condition): bool =>
-            str_contains($condition, '<>"OK"') && str_contains($condition, '<>"Missing Income"'));
+            str_contains($condition, '<>"OK"') && str_contains($condition, '<>"Card Readiness"'));
 
-        $this->assertNotNull($red, 'a red Must fix rule must exclude only OK and Missing Income');
+        $this->assertNotNull($red, 'a red Must fix rule must exclude only OK and Card Readiness warnings');
         $this->assertSame(Fill::FILL_SOLID, $red->getStyle()->getFill()->getFillType());
         $this->assertSame('FFC7CE', $red->getStyle()->getFill()->getStartColor()->getRGB());
         $this->assertSame('9C0006', $red->getStyle()->getFont()->getColor()->getRGB());
     }
 
-    public function testYellowFormattingAppliesToMissingIncome(): void
+    public function testYellowFormattingAppliesToCardReadinessWarnings(): void
     {
         $yellow = $this->matchingRule(self::CHECK_RANGE, static fn (string $condition): bool =>
-            str_contains($condition, '"Missing Income"') && ! str_contains($condition, '<>'));
+            str_contains($condition, '"Card Readiness"') && ! str_contains($condition, '<>'));
 
-        $this->assertNotNull($yellow, 'a yellow incomplete-data rule must be keyed by Missing Income');
+        $this->assertNotNull($yellow, 'a yellow warning rule must be keyed by Card Readiness');
         $this->assertSame(Fill::FILL_SOLID, $yellow->getStyle()->getFill()->getFillType());
         $this->assertSame('FFF2CC', $yellow->getStyle()->getFill()->getStartColor()->getRGB());
     }
 
-    public function testAsteriskGuidanceExplainsCompleteness(): void
+    public function testTemplateMarksHeadCardFieldsButNotOptionalProfileFieldsAsCardData(): void
     {
         $sheet = (new FamilyExcelTemplate())->build()->getSheetByName('Example');
         $guide = (string) $sheet->getCell('A8')->getValue();
 
-        $this->assertStringContainsString('complete record', $guide);
-        $this->assertStringContainsString('import as missing', $guide);
-        $this->assertStringContainsString('Data Completeness', $guide);
+        $this->assertStringContainsString('Card Readiness', $guide);
+        $this->assertStringNotContainsString('Multiple Addresses in Family', $guide);
+        $this->assertStringNotContainsString('Missing Income', $guide);
     }
 
     public function testCheckFormulaCountsTheWholeEntryAreaWithBoundedScalarCriteria(): void
@@ -112,13 +108,7 @@ final class FamilyExcelTemplateTest extends CIUnitTestCase
             $formula,
             'the duplicate-QR check must compare head last names across the entry area'
         );
-        $this->assertStringContainsString(
-            'COUNTIFS($A$3:$A$1000,$A3,$O$3:$O$1000,"<>"&$O3,$O$3:$O$1000,"<>")',
-            $formula,
-            'the multiple-address check must read the whole QR and Address columns'
-        );
-
-        foreach (['No Head in Family', 'Multiple Heads (Same Family)', 'Duplicate QR (Multiple Families)', 'Multiple Addresses in Family', 'Missing Income', 'OK'] as $label) {
+        foreach (['No Head in Family', 'Multiple Heads (Same Family)', 'Duplicate QR (Multiple Families)', 'Card Readiness: Missing Birthday', 'Card Readiness: Missing Sex', 'Card Readiness: Missing Contact Number', 'Card Readiness: Missing Address', 'Card Readiness: Missing Barangay', 'OK'] as $label) {
             $this->assertStringContainsString('"' . $label . '"', $formula);
         }
 

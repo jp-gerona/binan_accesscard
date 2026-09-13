@@ -16,10 +16,10 @@ $summary = $summary ?? ['file' => '', 'counts' => [], 'codes' => [], 'fileNotice
 $fieldOptions = $fieldOptions ?? [];
 $counts  = is_array($summary['counts'] ?? null) ? $summary['counts'] : [];
 
-// JSON islands: HEX_TAG/HEX_AMP keep any "</script>" or "&" from a spreadsheet cell
-// from breaking out of the <script> tag (defence against a crafted .xlsx).
-$summaryJson = json_encode($summary, JSON_HEX_TAG | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE);
-$fieldOptionsJson = json_encode($fieldOptions, JSON_HEX_TAG | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE);
+// JSON islands: hex escapes keep spreadsheet-derived text inert until the client parses it.
+$jsonFlags = JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE;
+$summaryJson = json_encode($summary, $jsonFlags) ?: '{}';
+$fieldOptionsJson = json_encode($fieldOptions, $jsonFlags) ?: '{}';
 ?>
 <div id="importReview" class="pb-5 mb-5"
      data-rows-url="<?= esc(site_url('records/import/review/' . $jobId . '/rows'), 'attr') ?>"

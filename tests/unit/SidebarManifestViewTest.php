@@ -22,7 +22,7 @@ final class SidebarManifestViewTest extends CIUnitTestCase
     {
         $html = $this->render('Admin');
 
-        foreach (['Dashboard', 'Family Records', 'Reference Data', 'Data Completeness',
+        foreach (['Dashboard', 'Family Records', 'Reference Data', 'Card Readiness',
                   'Access Cards', 'Distribution', 'Account Management', 'Audit Trails'] as $label) {
             $this->assertStringContainsString($label, $html);
         }

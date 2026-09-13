@@ -42,7 +42,7 @@ Order in the file is display order, and `heading` groups consecutive entries int
 the sidebar's sections: Core, Profiling, Distribution, Administration.
 
 The Profiling heading, for example, lists `records`, `records-import`, and
-`records-completeness` in that order. The last one is the Data Completeness queue
+`records-completeness` in that order. The last one is the Card Readiness queue
 (chapter 11), reachable by Developer, Admin, and Encoder.
 
 Two role sets cover most pages. `ALL_STAFF` is Developer, Admin, Encoder and

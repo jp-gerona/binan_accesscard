@@ -70,6 +70,37 @@ final class ImportReviewPresenterTest extends CIUnitTestCase
         $this->assertSame('Barangay', $page['rows'][0]['fields'][0]['label']);
     }
 
+    public function testMemberHouseholdCellsAreQuietInTheReview(): void
+    {
+        $page = $this->page([
+            'rows' => [$this->row(3, '6001', 'Child')],
+            'errors' => [
+                $this->error(3, '6001', 'BRGY', 'warning', 'barangay'),
+                $this->error(3, '6001', 'ADDRESS', 'blocking', 'address'),
+            ],
+        ]);
+
+        $this->assertSame('', $page['rows'][0]['severity']);
+        $this->assertSame([], $page['rows'][0]['issues']);
+        $this->assertSame([], $page['rows'][0]['fields']);
+    }
+
+    public function testStaleMemberHouseholdErrorsDoNotBlockOrPopulateSummaryFilters(): void
+    {
+        $summary = (new ImportReviewPresenter())->build([
+            'rows' => [$this->row(3, '6001', 'Child')],
+            'errors' => [
+                $this->error(3, '6001', 'ADDRESS', 'blocking', 'address'),
+                $this->error(3, '6001', 'BRGY', 'warning', 'barangay'),
+            ],
+            'counts' => ['blocking' => 1, 'warnings' => 1],
+        ]);
+
+        $this->assertSame(0, $summary['counts']['blocking']);
+        $this->assertSame(0, $summary['counts']['warnings']);
+        $this->assertSame([], $summary['codes']);
+    }
+
     public function testAMissingHeadIsFixableThroughItsRelationshipField(): void
     {
         // HEAD-NONE is recorded against relationship, so it needs no special case:
@@ -333,7 +364,7 @@ final class ImportReviewPresenterTest extends CIUnitTestCase
         sort($labels);
 
         $this->assertSame([
-            'Missing Birthday',
+            'Card Readiness: Missing Birthday',
             'Missing FirstName',
             'Missing Income',
             'Missing LastName',
@@ -341,7 +372,7 @@ final class ImportReviewPresenterTest extends CIUnitTestCase
 
         $filterLabels = array_column((new ImportReviewPresenter())->build($result)['codes'], 'label', 'code');
         $this->assertSame('Missing FirstName, Missing LastName', $filterLabels['REQUIRED']);
-        $this->assertSame('Missing Birthday, Missing Income', $filterLabels['INCOMPLETE']);
+        $this->assertSame('Card Readiness: Missing Birthday, Missing Income', $filterLabels['INCOMPLETE']);
     }
 
     public function testIssuesCarryTheirExcelCellReference(): void
@@ -379,8 +410,8 @@ final class ImportReviewPresenterTest extends CIUnitTestCase
 
         $codes = array_column((new ImportReviewPresenter())->build($result)['codes'], 'label', 'code');
 
-        $this->assertSame('Future birthday (imports blank)', $codes['BDAY-FUTURE']);
-        $this->assertSame('Missing Birthday', $codes['INCOMPLETE']);
+        $this->assertSame('Card Readiness: Future birthday', $codes['BDAY-FUTURE']);
+        $this->assertSame('Card Readiness: Missing Birthday', $codes['INCOMPLETE']);
         $this->assertSame('Invalid Sector Code', $codes['SECTOR']);
     }
 

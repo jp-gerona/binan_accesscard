@@ -7,6 +7,7 @@ use App\Models\Families\MemberModel;
 use App\Models\Lookups\SectorModel;
 use App\Models\Lookups\ServiceModel;
 use App\Models\Scanner\QrControlModel;
+use App\Support\ContactNumber;
 use App\Support\FamilyAgeEligibility;
 use App\Support\FamilyProfilingFormV2;
 use App\Support\MemberFieldNormalizer;
@@ -58,14 +59,6 @@ class FamilyExcelImporter
         'v' => 'V', '5' => 'V', '5th' => 'V', 'fifth' => 'V',
     ];
 
-    /**
-     * Service-code overrides applied before the Reference lookup. Intentional empty:
-     * codes must come from the Reference sheet; anything not listed is rejected as
-     * invalid rather than guess-repaired.
-     */
-    private const SERVICE_ALIASES = [
-    ];
-
     /** @var list<array{familyNo: string, headName: string, headPayload: array, headServiceIds: int[], memberPayloads: list<array{payload: array, serviceIds: int[]}>}> */
     private array $families = [];
 
@@ -79,7 +72,7 @@ class FamilyExcelImporter
      * QRs already in the DB, with the head stored under each - NOT just a name: the review
      * has to check the incoming head IS that person before it can call a group a duplicate.
      *
-     * @var array<int, array{headID: int, name: string, record: array<string, string|null>}>
+     * @var array<int, array{headID: int, name: string, record: array<string, string|int|null>}>
      */
     private array $existingHeads = [];
 
@@ -447,7 +440,7 @@ class FamilyExcelImporter
      * Bulk queries; safe when the tables are absent.
      *
      * @param list<array{sheetRow: int|string, data: array<string,string>}> $rows
-     * @return array<int, array{headID: int, name: string, record: array<string, string|null>}>
+     * @return array<int, array{headID: int, name: string, record: array<string, string|int|null>}>
      */
     public function existingHeadsForRows(array $rows): array
     {
@@ -552,10 +545,14 @@ class FamilyExcelImporter
      *
      * @param list<array{row: int, data: array<string, string>}> $rows
      */
-    private function collectAppends(string $familyNo, string $headName, array $rows, array $sectorByCode, array $serviceByCode, array $incomeByLabel): void
+    private function collectAppends(string $familyNo, string $headName, array $storedHead, array $rows, array $sectorByCode, array $serviceByCode, array $incomeByLabel): void
     {
         foreach ($rows as $entry) {
             $payload    = $this->buildPersonPayload($entry, $familyNo, false, $sectorByCode, $incomeByLabel);
+            // Existing households own their address and barangay. These source cells are
+            // member detail, not permission to overwrite or split a stored household.
+            $payload['address'] = $storedHead['address'] ?? null;
+            $payload['barangayID'] = $storedHead['barangayID'] ?? null;
             $serviceIds = $this->mapServices($entry, $familyNo, $serviceByCode);
 
             $this->validateAgeEligibility(
@@ -869,8 +866,8 @@ class FamilyExcelImporter
     // -- per-family validation + payload build ---------------------------------
 
     /**
-     * Validates one family group. Emits family-level coherence errors (head count,
-     * fingerprint, contiguity) AND validates every row's own fields, so all problems
+     * Validates one family group. Emits family-level coherence errors (head count and
+     * contiguity) AND validates every row's own fields, so all problems
      * surface at once. Only a coherent (exactly-one-head) family is appended as
      * persist-ready; field errors on it still block the import via the reviewer's gate.
      *
@@ -898,14 +895,21 @@ class FamilyExcelImporter
         $existingHeadName = (string) ($existing['name'] ?? '');
 
         // Family-level coherence (does not early-return - fields are still validated).
-        $this->checkFingerprint($familyNo, $rows);
         $blockIssue = $this->checkQrBlocks($familyNo, $blocks);
 
         // A headless group whose QR already belongs to a family = members being ADDED to
         // that existing family (the worker's forgotten-member-next-batch case). Instead of
         // HEAD-NONE, surface each as an append the operator confirms or removes.
         if (count($heads) === 0 && $existsInDb) {
-            $this->collectAppends($familyNo, $existingHeadName, $rows, $sectorByCode, $serviceByCode, $incomeByLabel);
+            $this->collectAppends(
+                $familyNo,
+                $existingHeadName,
+                is_array($existing['record'] ?? null) ? $existing['record'] : [],
+                $rows,
+                $sectorByCode,
+                $serviceByCode,
+                $incomeByLabel,
+            );
 
             return;
         }
@@ -989,120 +993,28 @@ class FamilyExcelImporter
         $this->memberCount += count($memberPayloads);
     }
 
-    /**
-     * Works out WHO the missing Head probably is, for a family with no Head row.
-     *
-     * In the template only the Head fills Address/Barangay - members leave them blank and
-     * inherit the head's. So in a head-less family, the row that carries an address is
-     * almost certainly the intended Head (the worker filled it like a head but never set
-     * Relationship = Head). Point the error straight at that person.
-     *
-     * @param list<array{row: int, data: array<string, string>}> $rows
+    /** @param list<array{row: int, data: array<string, string>}> $rows
      * @return array{0: int, 1: string} [anchor sheet row, message]
      */
     private function headlessDiagnosis(string $familyNo, array $rows): array
     {
-        $withAddress = [];
-
-        foreach ($rows as $entry) {
-            $address  = trim((string) ($entry['data']['address'] ?? ''));
-            $barangay = trim((string) ($entry['data']['barangay'] ?? ''));
-
-            if ($address !== '' || $barangay !== '') {
-                $withAddress[] = $entry;
-            }
-        }
-
-        // Exactly one person carries the address → that is the Head.
-        if (count($withAddress) === 1) {
-            $candidate = $withAddress[0];
-            $name = trim(((string) ($candidate['data']['firstname'] ?? '')) . ' ' . ((string) ($candidate['data']['lastname'] ?? '')));
-
-            return [
-                (int) $candidate['row'],
-                'Family ' . $familyNo . ' has no Head. Row ' . $candidate['row']
-                    . ($name !== '' ? ' (' . $name . ')' : '')
-                    . ' is the only person with an address, so they are most likely the Head - set their relationship to Head.',
-            ];
-        }
-
-        // Nobody carries an address → the head is missing entirely, address and all.
-        if ($withAddress === []) {
-            return [
-                (int) $rows[0]['row'],
-                'Family ' . $familyNo . ' has no Head and no address on any row. Set one person as Head and give them an Address and Barangay.',
-            ];
-        }
-
-        // Several rows carry an address. If it is the SAME address it is one household
-        // (the worker just repeated it) - the operator only has to pick who the Head is.
-        // Different addresses mean two households sharing one QR.
-        $distinct = [];
-
-        foreach ($withAddress as $entry) {
-            $key = $this->normalizeText((string) ($entry['data']['address'] ?? ''))
-                . '|' . $this->normalizeText((string) ($entry['data']['barangay'] ?? ''));
-            $distinct[$key] = true;
-        }
-
-        if (count($distinct) === 1) {
-            return [
-                (int) $withAddress[0]['row'],
-                'Family ' . $familyNo . ' has no Head. ' . count($withAddress) . ' people carry the same address, '
-                    . 'so this is one household - set exactly one of them as Head.',
-            ];
-        }
-
         return [
-            (int) $withAddress[0]['row'],
-            'Family ' . $familyNo . ' has no Head, and ' . count($distinct) . ' different addresses appear. '
-                . 'This looks like two households sharing one QR - give each household its own QR, then set one Head in each.',
+            (int) $rows[0]['row'],
+            'Family ' . $familyNo . ' has no Head. Set one person as Head.',
         ];
-    }
-
-    /**
-     * QR-29 / fingerprint: one QR must be one household. Flags a group whose rows carry
-     * more than one non-blank barangay or address (the signature of a copy-pasted block
-     * or an off-by-one row shift). Surname is deliberately NOT part of the fingerprint -
-     * a real household legitimately holds mixed surnames.
-     *
-     * @param list<array{row: int, data: array<string, string>}> $rows
-     */
-    private function checkFingerprint(string $familyNo, array $rows): void
-    {
-        $barangays = [];
-        $addresses = [];
-
-        foreach ($rows as $entry) {
-            $barangay = $this->normalizeText((string) ($entry['data']['barangay'] ?? ''));
-            $address  = $this->normalizeText((string) ($entry['data']['address'] ?? ''));
-
-            if ($barangay !== '') {
-                $barangays[$barangay] = true;
-            }
-
-            if ($address !== '') {
-                $addresses[$address] = true;
-            }
-        }
-
-        if (count($barangays) > 1 || count($addresses) > 1) {
-            $this->addError($rows[0]['row'], $familyNo, 'FP-ADDR', 'address',
-                'Family ' . $familyNo . ' has rows with different addresses or barangays. One QR Number must be one household - check for a copied block or a shifted row.');
-        }
     }
 
     /**
      * Distinguishes a separate household sharing a QR from a harmless separated
      * continuation. A multiple-head error is local to one contiguous block; heads in
-     * different blocks only conflict when every block has one and their identities differ.
+     * different blocks may join only when every Head identity component is present and
+     * exactly matches. Missing proof is ambiguous, so it blocks instead of guessing.
      *
      * @param list<list<array{row: int, data: array<string, string>}>> $blocks
      */
     private function checkQrBlocks(string $familyNo, array $blocks): bool
     {
         $hasBlockingIssue = false;
-        $singleHeads = [];
 
         foreach ($blocks as $block) {
             $heads = array_values(array_filter($block, static fn (array $entry): bool =>
@@ -1115,51 +1027,52 @@ class FamilyExcelImporter
                 $hasBlockingIssue = true;
             }
 
-            if (count($heads) === 1) {
-                $singleHeads[] = ['head' => $heads[0], 'block' => $block];
-            }
         }
 
         if (count($blocks) < 2) {
             return $hasBlockingIssue;
         }
 
-        // A different-family conflict is provable only when every separated block has
-        // exactly one head. A headless block can be a continuation of the preceding one.
-        if (count($singleHeads) === count($blocks)) {
-            $identities = [];
+        $identities = [];
 
-            foreach ($singleHeads as $item) {
-                $data = $item['head']['data'];
-                $identities[] = implode('|', [
-                    $this->normalizeText((string) ($data['firstname'] ?? '')),
-                    $this->normalizeText((string) ($data['lastname'] ?? '')),
-                    (string) $this->normalizeBirthday((string) ($data['birthday'] ?? '')),
-                ]);
+        foreach ($blocks as $block) {
+            $heads = array_values(array_filter($block, static fn (array $entry): bool =>
+                strcasecmp(trim((string) ($entry['data']['relationship'] ?? '')), 'Head') === 0
+            ));
+            $data = count($heads) === 1 ? $heads[0]['data'] : [];
+            $identity = [
+                $this->normalizeText((string) ($data['firstname'] ?? '')),
+                $this->normalizeText((string) ($data['middlename'] ?? '')),
+                $this->normalizeText((string) ($data['lastname'] ?? '')),
+                $this->normalizeText(str_replace('.', '', (string) ($data['suffix'] ?? ''))),
+                $this->normalizeBirthday((string) ($data['birthday'] ?? '')),
+            ];
+
+            if (count($heads) !== 1 || in_array('', $identity, true) || in_array(null, $identity, true)) {
+                $identities[] = null;
+                continue;
             }
 
-            if (count(array_unique($identities)) > 1) {
-                $descriptions = [];
-
-                foreach ($singleHeads as $item) {
-                    $block = $item['block'];
-                    $range = (int) $block[0]['row'] . '-' . (int) $block[array_key_last($block)]['row'];
-                    $name = $this->personName($item['head']['data']) ?: 'an unnamed Head';
-                    $descriptions[] = 'rows ' . $range . ' (headed by ' . $name . ')';
-                }
-
-                foreach ($singleHeads as $item) {
-                    $this->addError((int) $item['head']['row'], $familyNo, 'DUP-QR-FAMILY', 'familyno',
-                        'QR ' . $familyNo . ' is used by separate family blocks: ' . implode(' and ', $descriptions)
-                        . '. Give each family its own QR Number.');
-                }
-
-                return true;
-            }
+            $identities[] = implode('|', $identity);
         }
 
-        // Blank rows do not split blocks; reaching here means another populated QR block
-        // did. It is safe only because the blocks did not prove different families.
+        if (in_array(null, $identities, true) || count(array_unique($identities)) > 1) {
+            $descriptions = [];
+
+            foreach ($blocks as $block) {
+                $range = (int) $block[0]['row'] . '-' . (int) $block[array_key_last($block)]['row'];
+                $descriptions[] = 'rows ' . $range;
+            }
+
+            foreach ($blocks as $block) {
+                $this->addError((int) $block[0]['row'], $familyNo, 'DUP-QR-FAMILY', 'familyno',
+                    'QR ' . $familyNo . ' is used by separate family blocks (' . implode(' and ', $descriptions)
+                    . '). Each block must have one Head with the same complete name, suffix, and birthday. Give each family its own QR Number.');
+            }
+
+            return true;
+        }
+
         $this->addError((int) $blocks[0][0]['row'], $familyNo, 'QR-CONTIG', 'familyno',
             'Family ' . $familyNo . ' rows are not next to each other. This can happen after sorting or pasting - check the grouping.', 'warning');
 
@@ -1185,42 +1098,39 @@ class FamilyExcelImporter
         $this->requireField($row, $familyNo, 'firstname', 'First Name', $firstName);
         $this->requireField($row, $familyNo, 'lastname', 'Last Name', $lastName);
 
-        $birthday = $this->validateBirthday($row, $familyNo, (string) ($data['birthday'] ?? ''));
-        $sex      = $this->validateSex($row, $familyNo, (string) ($data['sex'] ?? ''));
+        $birthday = $this->validateBirthday($row, $familyNo, (string) ($data['birthday'] ?? ''), $isHead);
+        $sex      = $this->validateSex($row, $familyNo, (string) ($data['sex'] ?? ''), $isHead);
 
         $civilStatus = $this->fullValueFromCode((string) ($data['civilstatus'] ?? ''), FamilyExcelTemplate::CIVIL_STATUS_CODES);
         $education   = $this->fullValueFromCode((string) ($data['education'] ?? ''), FamilyExcelTemplate::EDUCATION_CODES);
 
-        if (trim($civilStatus) === '') {
-            $this->incompleteField($row, $familyNo, 'civilstatus', 'Civil Status');
-        }
-        if (trim($education) === '') {
-            $this->incompleteField($row, $familyNo, 'education', 'Education');
-        }
-        if (trim((string) ($data['job'] ?? '')) === '') {
-            $this->incompleteField($row, $familyNo, 'job', 'Job');
-        }
+        $income = $this->resolveIncome($row, $familyNo, (string) ($data['monthlyincome'] ?? ''), $incomeByLabel);
+        $profile = $this->optionalProfileDefaults(
+            $civilStatus,
+            $education,
+            (string) ($data['job'] ?? ''),
+            (string) ($data['religion'] ?? ''),
+            $income,
+            trim((string) ($data['monthlyincome'] ?? '')) === ''
+        );
 
         if ($isHead) {
-            if (trim((string) ($data['address'] ?? '')) === '') {
-                $this->incompleteField($row, $familyNo, 'address', 'Address');
+            $address = trim((string) ($data['address'] ?? ''));
+
+            if ($address === '') {
+                $this->missingHeadCardField($row, $familyNo, 'address', 'Address');
+            } else {
+                $this->validateAddress($row, $familyNo, $address);
             }
             if (trim((string) ($data['barangay'] ?? '')) === '') {
-                $this->incompleteField($row, $familyNo, 'barangay', 'Barangay');
+                $this->missingHeadCardField($row, $familyNo, 'barangay', 'Barangay');
             }
-            // Barangay has no "Other" option, so a value that is not an official
-            // barangay resolves to no barangayID (see validateBarangay's warning).
+
             $this->validateBarangay($row, $familyNo, (string) ($data['barangay'] ?? ''));
-        } elseif (trim((string) ($data['relationship'] ?? '')) === '') {
-            $this->addError($row, $familyNo, 'INCOMPLETE', 'relationship',
-                'Relationship is blank - this row imports as a Member.', 'warning');
         }
 
-        $income = $this->resolveIncome($row, $familyNo, (string) ($data['monthlyincome'] ?? ''), $incomeByLabel);
         $sectorIds = $this->mapSectors($entry, $familyNo, $sectorByCode);
-
-        // Contact number (optional): warn if present and not 09 + 11 digits.
-        $this->validateContact($row, $familyNo, (string) ($data['contactnumber'] ?? ''));
+        $contact = $this->contactValue($row, $familyNo, (string) ($data['contactnumber'] ?? ''), $isHead);
         // Suffix (optional): normalise "Jr."->"JR" / map "the 3rd"->"III"; an unmappable
         // suffix is left blank (so the DB enum insert can't fail) with a warning.
         $suffix = $this->validateSuffix($row, $familyNo, (string) ($data['suffix'] ?? ''));
@@ -1228,9 +1138,8 @@ class FamilyExcelImporter
         $firstClean  = MemberFieldNormalizer::cleanName($firstName);
         $middleClean = MemberFieldNormalizer::cleanName((string) ($data['middlename'] ?? ''));
         $lastClean   = MemberFieldNormalizer::cleanName($lastName);
-        $civilValue  = MemberFieldNormalizer::nullableText($civilStatus);
-        $contact     = MemberFieldNormalizer::nullableText((string) ($data['contactnumber'] ?? ''));
-        $religion    = MemberFieldNormalizer::nullableUpperText((string) ($data['religion'] ?? ''));
+        $civilValue  = $profile['civilstatus'];
+        $religion    = $profile['religion'];
 
         // Guard the varchar column limits so an over-long value can't fail or silently
         // truncate at the write step. (Address / Job / Education / Relationship are TEXT.)
@@ -1249,9 +1158,9 @@ class FamilyExcelImporter
             'birthday'      => $birthday,
             'civilstatus'   => $civilValue,
             'sex'           => $sex,
-            'education'     => MemberFieldNormalizer::nullableUpperText($education),
-            'job'           => MemberFieldNormalizer::nullableUpperText((string) ($data['job'] ?? '')),
-            'salary'        => MemberFieldNormalizer::moneyOrNull($income),
+            'education'     => $profile['education'],
+            'job'           => $profile['job'],
+            'salary'        => $profile['salary'],
             'contactnumber' => $contact,
             'religion'      => $religion,
             // The sheet's Barangay column resolves to barangayID below; it is no
@@ -1263,7 +1172,7 @@ class FamilyExcelImporter
             'address'       => MemberFieldNormalizer::nullableText(
                 (string) ($data['address'] ?? '')
             ),
-            'barangayID'    => $this->barangayIdForHead((string) ($data['barangay'] ?? '')),
+            'barangayID'    => $isHead ? $this->barangayIdForHead((string) ($data['barangay'] ?? '')) : null,
             'relationship'  => $isHead ? 'HEAD' : (MemberFieldNormalizer::nullableUpperText((string) ($data['relationship'] ?? '')) ?? 'MEMBER'),
             'sector_ids'    => $sectorIds,
         ];
@@ -1286,32 +1195,49 @@ class FamilyExcelImporter
         }
     }
 
-    /**
-     * Records the warning for a blank field that imports as NULL: the row is saved,
-     * and the family is listed on the Data Completeness report until the data is
-     * collected. Blank never blocks, because the member table permits NULL on
-     * every field this covers; only identity (names, QR) and family structure do.
-     */
-    private function incompleteField(int $row, string $familyNo, string $field, string $label): void
+    /** Records a missing Head card field without preventing the import. */
+    private function missingHeadCardField(int $row, string $familyNo, string $field, string $label): void
     {
         $this->addError($row, $familyNo, 'INCOMPLETE', $field,
-            $label . ' is blank - imports with no ' . strtolower($label)
-            . '. The family is listed on the Data Completeness report.', 'warning');
+            $label . ' is blank. The family imports but is not ready for an access card.', 'warning');
+    }
+
+    /** Blocks a supplied household address that cannot satisfy the member validation. */
+    private function validateAddress(int $row, string $familyNo, string $value): void
+    {
+        $length = mb_strlen($value);
+
+        if ($length < 2 || $length > 255) {
+            $this->addError($row, $familyNo, 'ADDRESS', 'address',
+                'Address must be between 2 and 255 characters.');
+        }
     }
 
     /**
-     * Validates a birthday cell. Blank, unparseable, and future values all import
-     * as NULL with a warning, so the write step's not_future_date rule can never
-     * roll a family back; the original text is quoted so the spreadsheet fixer can
-     * see it. A date over 150 years past warns but still imports as typed (the DB
-     * accepts it, and 150 is past the oldest human on record).
+     * Returns the importer-only defaults for absent profiling values.
+     *
+     * @return array{civilstatus:string,education:string,job:string,religion:string,salary:?float}
      */
-    private function validateBirthday(int $row, string $familyNo, string $value): ?string
+    private function optionalProfileDefaults(string $civilStatus, string $education, string $job, string $religion, ?string $income, bool $incomeWasBlank): array
+    {
+        return [
+            'civilstatus' => MemberFieldNormalizer::nullableUpperText($civilStatus) ?? 'NOT PROVIDED',
+            'education'   => MemberFieldNormalizer::nullableUpperText($education) ?? 'NOT PROVIDED',
+            'job'         => MemberFieldNormalizer::nullableUpperText($job) ?? 'NOT PROVIDED',
+            'religion'    => MemberFieldNormalizer::nullableUpperText($religion) ?? 'NOT PROVIDED',
+            'salary'      => $incomeWasBlank ? 0.0 : MemberFieldNormalizer::moneyOrNull($income),
+        ];
+    }
+
+    /** Validates a birthday cell without inventing a missing or malformed date. */
+    private function validateBirthday(int $row, string $familyNo, string $value, bool $isHead): ?string
     {
         $value = trim($value);
 
         if ($value === '') {
-            $this->incompleteField($row, $familyNo, 'birthday', 'Birthday');
+            if ($isHead) {
+                $this->missingHeadCardField($row, $familyNo, 'birthday', 'Birthday');
+            }
 
             return null;
         }
@@ -1320,8 +1246,7 @@ class FamilyExcelImporter
 
         if ($date === null) {
             $this->addError($row, $familyNo, 'BDAY', 'birthday',
-                'Birthday "' . $value . '" could not be read (use MM-DD-YYYY) - imports with no birthday.'
-                . ' The family is listed on the Data Completeness report.', 'warning');
+                'Birthday "' . $value . '" could not be read (use MM-DD-YYYY).');
 
             return null;
         }
@@ -1330,8 +1255,7 @@ class FamilyExcelImporter
 
         if ($date > $today) {
             $this->addError($row, $familyNo, 'BDAY-FUTURE', 'birthday',
-                'Birthday "' . $value . '" is in the future - imports with no birthday.'
-                . ' The family is listed on the Data Completeness report.', 'warning');
+                'Birthday "' . $value . '" is in the future.');
 
             return null;
         }
@@ -1387,13 +1311,15 @@ class FamilyExcelImporter
         return null;
     }
 
-    /** Validates a sex cell against Male/Female. Blank imports as NULL with an INCOMPLETE warning. */
-    private function validateSex(int $row, string $familyNo, string $value): ?string
+    /** Validates a sex cell against Male/Female. */
+    private function validateSex(int $row, string $familyNo, string $value, bool $isHead): ?string
     {
         $value = trim($value);
 
         if ($value === '') {
-            $this->incompleteField($row, $familyNo, 'sex', 'Sex');
+            if ($isHead) {
+                $this->missingHeadCardField($row, $familyNo, 'sex', 'Sex');
+            }
 
             return null;
         }
@@ -1407,15 +1333,14 @@ class FamilyExcelImporter
         }
 
         $this->addError($row, $familyNo, 'SEX', 'sex',
-            'Sex "' . $value . '" is not Male or Female - imports with no sex.'
-            . ' The family is listed on the Data Completeness report.', 'warning');
+            'Sex "' . $value . '" is not Male or Female.');
 
         return null;
     }
 
     /**
      * Resolves a monthly-income cell (a bracket label or a number) to its stored value.
-     * Blank imports as NULL with an INCOMPLETE warning.
+     * A blank value is defaulted by optionalProfileDefaults().
      *
      * @param array<string, string> $incomeByLabel
      */
@@ -1424,8 +1349,6 @@ class FamilyExcelImporter
         $value = trim($value);
 
         if ($value === '') {
-            $this->incompleteField($row, $familyNo, 'monthlyincome', 'Monthly Income');
-
             return null;
         }
 
@@ -1445,8 +1368,7 @@ class FamilyExcelImporter
         }
 
         $this->addError($row, $familyNo, 'INCOME', 'monthlyincome',
-            'Monthly income "' . $value . '" could not be read as a bracket or amount - imports with no income.'
-            . ' The family is listed on the Data Completeness report.', 'warning');
+            'Monthly income "' . $value . '" could not be read as a bracket or amount. Correct it if the income is known.', 'warning');
 
         return null;
     }
@@ -1558,10 +1480,8 @@ class FamilyExcelImporter
      */
     private function serviceTokens(int $row, string $familyNo, string $token, array $serviceByCode): array
     {
-        $code = self::SERVICE_ALIASES[$token] ?? $token;
-
-        if (isset($serviceByCode[$code])) {
-            return [$code];
+        if (isset($serviceByCode[$token])) {
+            return [$token];
         }
 
         $this->addError($row, $familyNo, 'SERVICE', 'services',
@@ -1570,24 +1490,27 @@ class FamilyExcelImporter
         return [];
     }
 
-    /**
-     * Warns when a contact number is present but isn't 09 + 11 digits. Optional field,
-     * so a blank cell is fine; punctuation (spaces/dashes) is ignored before the check.
-     */
-    private function validateContact(int $row, string $familyNo, string $value): void
+    /** Returns canonical contact digits, blocking malformed supplied values. */
+    private function contactValue(int $row, string $familyNo, string $value, bool $isHead): ?string
     {
-        $value = trim($value);
+        $contact = ContactNumber::parse($value);
 
-        if ($value === '') {
-            return;
+        if (! $contact['supplied']) {
+            if ($isHead) {
+                $this->missingHeadCardField($row, $familyNo, 'contactnumber', 'Contact Number');
+            }
+
+            return null;
         }
 
-        $digits = preg_replace('/[^0-9]/', '', $value);
-
-        if (! preg_match('/^09[0-9]{9}$/', (string) $digits)) {
+        if (! $contact['valid']) {
             $this->addError($row, $familyNo, 'CONTACT', 'contactnumber',
-                'Contact number "' . $value . '" should start with 09 and be 11 digits.', 'warning');
+                'Contact number "' . trim($value) . '" is not a valid mobile or Biñan landline number.');
+
+            return null;
         }
+
+        return $contact['value'];
     }
 
     /**
@@ -1627,11 +1550,9 @@ class FamilyExcelImporter
     }
 
     /**
-     * Flags a head whose barangay isn't one of the official Biñan barangays. The match is
+     * Flags a supplied barangay outside the official Biñan reference list. The match is
      * tolerant (case, ñ, dots and the "(...)" alias are ignored) so "Biñan"/"Sto. Tomas"
-     * still pass; only a genuine non-barangay is flagged. Since V22 the barangay is stored
-     * as member.barangayID, so a value that resolves to no row is not saved at all - the
-     * head imports with no barangay and the family is queued on the Data Completeness report.
+     * still pass. Only a Head establishes household Barangay, so member cells are ignored.
      */
     private function validateBarangay(int $row, string $familyNo, string $value): void
     {
@@ -1646,8 +1567,7 @@ class FamilyExcelImporter
 
         if (! isset($known[$this->normalizeBarangay($value)])) {
             $this->addError($row, $familyNo, 'BRGY', 'barangay',
-                'Barangay "' . $value . '" is not an official Biñan barangay - imports with no barangay.'
-                . ' The family is listed on the Data Completeness report.', 'warning');
+                'Barangay "' . $value . '" is not an official Biñan barangay.');
         }
     }
 
@@ -2046,7 +1966,7 @@ class FamilyExcelImporter
     /**
      * Resolves a head's Barangay cell to its barangayID, or null when blank or
      * unrecognised. A blank cell carries an INCOMPLETE warning and an unrecognised one
-     * a BRGY error, so the null matches the row's review verdict.
+     * a blocking BRGY error, so the null matches the row's review verdict.
      */
     private function barangayIdForHead(string $value): ?int
     {

@@ -8,50 +8,55 @@ use PHPUnit\Framework\TestCase;
 
 final class DataCompletenessExportTest extends TestCase
 {
-    public function testFormulaLikeFamilyDataCellsAreExplicitStrings(): void
+    public function testFormulaLikeCardDataCellsAreExplicitStrings(): void
     {
-        $sheet = DataCompletenessExport::build([
-            ['qr' => 6001, 'head' => '=HEAD', 'barangay' => '=BARANGAY',
-             'headGaps' => [], 'members' => [
-                 ['name' => '=MEMBER', 'relationship' => '=RELATIONSHIP', 'gaps' => []],
-             ]],
-        ])->getActiveSheet();
+        $sheet = DataCompletenessExport::build([[
+            'control_no' => '=6001', 'firstname' => '=JUAN', 'lastname' => '=CRUZ', 'suffix' => null,
+            'sex' => 'MALE', 'birthday' => '1990-01-01', 'address' => '=ADDRESS',
+            'contactnumber' => '=09171234567', 'barangay' => '=BARANGAY', 'missing' => [],
+        ]])->getActiveSheet();
 
-        foreach (['B2', 'C2', 'D2', 'B3', 'C3', 'D3', 'E3'] as $coordinate) {
+        foreach (['A2', 'B2', 'C2', 'D2', 'G2', 'H2', 'I2'] as $coordinate) {
             $this->assertSame(DataType::TYPE_STRING, $sheet->getCell($coordinate)->getDataType());
         }
     }
 
-    public function testBuildsOneRowPerPersonWithMissingMarkers(): void
+    public function testBuildsOneHeadRowWithMissingMarkers(): void
     {
-        $families = [
-            ['qr' => 6001, 'head' => 'Juan Cruz', 'barangay' => 'Malaban',
-             'headGaps' => ['Monthly Income', 'Address'], 'members' => [
-                 ['name' => 'Jose Cruz', 'relationship' => 'CHILD', 'gaps' => ['Education']],
-             ], 'gapCount' => 3],
-            ['qr' => 6002, 'head' => 'Maria Santos', 'barangay' => '',
-             'headGaps' => ['Barangay'], 'members' => [], 'gapCount' => 1],
-        ];
+        $rows = [[
+            'control_no' => 6001, 'firstname' => 'Juan', 'lastname' => 'Cruz', 'suffix' => 'JR',
+            'sex' => null, 'birthday' => '1990-01-01', 'address' => null,
+            'contactnumber' => '09171234567', 'barangay' => 'Malaban',
+            'missing' => ['Sex', 'Address'],
+        ]];
 
-        $sheet = DataCompletenessExport::build($families)->getActiveSheet();
+        $sheet = DataCompletenessExport::build($rows)->getActiveSheet();
 
-        $this->assertSame('Data Completeness', $sheet->getTitle());
-        // Header row. Columns: A QR, B Family Head, C Barangay, D Member,
-        // E Relationship, F Birthday, G Sex, H Civil Status, I Education,
-        // J Job, K Monthly Income, L Address.
-        $this->assertSame('QR', $sheet->getCell('A1')->getValue());
-        $this->assertSame('Member', $sheet->getCell('D1')->getValue());
-        // Head row: the two head gaps marked.
-        $this->assertSame('Juan Cruz', $sheet->getCell('D2')->getValue());
-        $this->assertSame('Malaban', $sheet->getCell('C2')->getValue()); // Barangay
-        $this->assertSame('MISSING', $sheet->getCell('K2')->getValue()); // Monthly Income
-        $this->assertSame('MISSING', $sheet->getCell('L2')->getValue()); // Address
-        // Member row: its gap marked, head gaps not repeated.
-        $this->assertSame('Jose Cruz', $sheet->getCell('D3')->getValue());
-        $this->assertSame('MISSING', $sheet->getCell('I3')->getValue()); // Education
-        $this->assertNotSame('MISSING', (string) $sheet->getCell('K3')->getValue());
-        // Second family: blank barangayID head marks the Barangay gap.
-        $this->assertSame('Maria Santos', $sheet->getCell('D4')->getValue());
-        $this->assertSame('MISSING', $sheet->getCell('C4')->getValue()); // Barangay
+        $this->assertSame('Card Readiness', $sheet->getTitle());
+        $this->assertSame('Control Number', $sheet->getCell('A1')->getValue());
+        $this->assertSame('First Name', $sheet->getCell('B1')->getValue());
+        $this->assertSame('Last Name', $sheet->getCell('C1')->getValue());
+        $this->assertSame('Suffix', $sheet->getCell('D1')->getValue());
+        $this->assertSame('Juan', $sheet->getCell('B2')->getValue());
+        $this->assertSame('Cruz', $sheet->getCell('C2')->getValue());
+        $this->assertSame('JR', $sheet->getCell('D2')->getValue());
+        $this->assertSame('MISSING', $sheet->getCell('E2')->getValue());
+        $this->assertSame('1990-01-01', $sheet->getCell('F2')->getValue());
+        $this->assertSame('MISSING', $sheet->getCell('G2')->getValue());
+        $this->assertSame('Malaban', $sheet->getCell('I2')->getValue());
+    }
+
+    public function testMissingRequiredNameColumnsDoNotHideASuppliedSuffix(): void
+    {
+        $sheet = DataCompletenessExport::build([[
+            'control_no' => 6002, 'firstname' => null, 'lastname' => null, 'suffix' => 'III',
+            'sex' => 'MALE', 'birthday' => '1990-01-01', 'address' => 'SAMPLE STREET',
+            'contactnumber' => '09171234567', 'barangay' => 'Malaban',
+            'missing' => ['First Name', 'Last Name'],
+        ]])->getActiveSheet();
+
+        $this->assertSame('MISSING', $sheet->getCell('B2')->getValue());
+        $this->assertSame('MISSING', $sheet->getCell('C2')->getValue());
+        $this->assertSame('III', $sheet->getCell('D2')->getValue());
     }
 }

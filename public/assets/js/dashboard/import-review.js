@@ -415,16 +415,17 @@
         label.setAttribute('for', id);
         col.appendChild(label);
 
-        var options = fieldOptions[field.field];
-        var control = (options && options.length)
-            ? buildSelect(field, options)
-            : buildInput(field);
+        var controls = buildFieldControls(field, id);
 
-        control.id = id;
-        control.classList.add('js-import-field');
-        control.dataset.field = field.field;
-        control.dataset.row = sheetRow;
-        col.appendChild(control);
+        controls.forEach(function (control, index) {
+            if (index === 0) {
+                control.id = id;
+                control.classList.add('js-import-field');
+                control.dataset.field = field.field;
+                control.dataset.row = sheetRow;
+            }
+            col.appendChild(control);
+        });
 
         if (field.message) {
             col.appendChild(el('div',
@@ -435,9 +436,31 @@
         return col;
     }
 
+    function buildFieldControls(field, id) {
+        var options = fieldOptions[field.field];
+
+        if (isProfileField(field.field) && Array.isArray(options)) {
+            return buildProfileControls(field, options, id);
+        }
+
+        if (isReferenceList(field.field) && Array.isArray(options)) {
+            return [buildListedSelect(field, options, field.field === 'sector' || field.field === 'services')];
+        }
+
+        return [buildInput(field)];
+    }
+
+    function isProfileField(field) {
+        return ['civilstatus', 'education', 'job', 'religion', 'relationship'].indexOf(field) !== -1;
+    }
+
+    function isReferenceList(field) {
+        return ['sector', 'services', 'barangay', 'sex', 'suffix', 'monthlyincome'].indexOf(field) !== -1;
+    }
+
     function buildInput(field) {
         var input = el('input', 'form-control form-control-sm');
-        input.type = field.field === 'birthday' ? 'date' : 'text';
+        input.type = field.field === 'birthday' ? 'date' : (field.field === 'contactnumber' ? 'tel' : 'text');
         
         var val = field.value || '';
         if (field.field === 'birthday' && val) {
@@ -462,36 +485,83 @@
         return input;
     }
 
-    // A <select> mirroring the Excel column's dropdown. A blank first choice lets a
-    // required-but-empty field start unselected; an off-list current value is kept as its
-    // own option so saving never silently drops what is already there.
-    function buildSelect(field, options) {
+    function optionValue(option) {
+        return typeof option === 'object' && option !== null
+            ? String(option.value || '')
+            : String(option || '');
+    }
+
+    function optionLabel(option) {
+        return typeof option === 'object' && option !== null
+            ? String(option.label || option.value || '')
+            : String(option || '');
+    }
+
+    // Reference values are exact choices. Do not retain an invalid current token as an
+    // option, because the browser must never imply that it is valid on re-apply.
+    function buildListedSelect(field, options, multiple) {
         var select = el('select', 'form-select form-select-sm');
         var current = field.value || '';
+        var selected = multiple ? current.split(',').map(function (value) {
+            return value.trim();
+        }).filter(Boolean) : [current];
 
-        var blank = el('option', null, '- choose -');
+        if (multiple) {
+            select.multiple = true;
+            select.size = Math.min(Math.max(options.length + 1, 3), 8);
+        }
+
+        var blank = el('option', null, multiple ? 'Clear selection' : '- choose -');
         blank.value = '';
+        blank.selected = current === '';
         select.appendChild(blank);
 
-        var matched = current === '';
         options.forEach(function (opt) {
-            var option = el('option', null, opt);
-            option.value = opt;
-            if (opt === current) {
+            var value = optionValue(opt);
+            var option = el('option', null, optionLabel(opt));
+            option.value = value;
+            if (selected.indexOf(value) !== -1) {
                 option.selected = true;
-                matched = true;
             }
             select.appendChild(option);
         });
 
-        if (!matched) {
-            var keep = el('option', null, current + ' (current)');
-            keep.value = current;
-            keep.selected = true;
-            select.appendChild(keep);
+        return select;
+    }
+
+    // Profile fields accept only their listed values or an explicit Other entry. An
+    // unlisted staged value opens Other text rather than becoming a hidden select option.
+    function buildProfileControls(field, options, id) {
+        var select = buildListedSelect(field, options, false);
+        var otherValue = options.find(function (option) {
+            return /^others?$/i.test(optionValue(option));
+        });
+        var current = field.value || '';
+        var isListed = options.some(function (option) {
+            return optionValue(option) === current;
+        });
+        var other = el('input', 'form-control form-control-sm mt-2 js-import-other');
+        other.type = 'text';
+        other.id = id + '-other';
+        other.placeholder = 'Enter other ' + field.label.toLowerCase();
+        other.setAttribute('aria-label', 'Other ' + field.label);
+        other.dataset.otherFor = id;
+
+        if (!isListed && current !== '' && otherValue) {
+            select.value = optionValue(otherValue);
+            other.value = current;
         }
 
-        return select;
+        toggleOtherInput(select, other);
+        select.dataset.otherInput = other.id;
+
+        return [select, other];
+    }
+
+    function toggleOtherInput(select, other) {
+        var show = /^others?$/i.test(select.value || '');
+        other.classList.toggle('d-none', !show);
+        other.disabled = !show;
     }
 
     // -- network ---------------------------------------------------------------
@@ -546,7 +616,22 @@
         var any = false;
 
         Array.prototype.forEach.call(controls, function (control) {
-            payload['fields[' + control.dataset.field + ']'] = control.value;
+            var value = control.value;
+
+            if (control.multiple) {
+                value = Array.prototype.filter.call(control.children, function (option) {
+                    return option.selected && option.value !== '';
+                }).map(function (option) {
+                    return option.value;
+                }).join(',');
+            }
+
+            if (control.dataset.otherInput && /^others?$/i.test(value || '')) {
+                var other = document.getElementById(control.dataset.otherInput);
+                value = other ? other.value : '';
+            }
+
+            payload['fields[' + control.dataset.field + ']'] = value;
             any = true;
         });
 
@@ -997,6 +1082,20 @@
         state.severity = pill.dataset.severity;
         state.page = 1;
         loadRows();
+    });
+
+    root.addEventListener('change', function (event) {
+        var select = event.target.closest ? event.target.closest('.js-import-field[data-other-input]') : null;
+
+        if (!select) {
+            return;
+        }
+
+        var other = document.getElementById(select.dataset.otherInput);
+
+        if (other) {
+            toggleOtherInput(select, other);
+        }
     });
 
     // Debounced so typing does not fire a request per keystroke.
