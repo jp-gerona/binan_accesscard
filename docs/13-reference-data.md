@@ -14,10 +14,10 @@ everywhere through `BarangayModel`, and there is no screen for editing it.
 **`barangay`** is the list of Biñan's barangays. Every member has one, and
 distributions target by it. It is effectively fixed: barangays are an
 administrative fact, not a preference. Import matching against this list is
-deliberately tolerant, accepting `Sto.` for `Santo`, `n` for `ñ`, and a
-parenthesised alias, because survey spreadsheets spell them every possible way.
-Anything still off-list raises the `BRGY` warning rather than blocking, so a
-family is never lost to a spelling argument.
+canonical: it folds a supplied Head value to the same comparison key as the
+active official names, then requires an exact key match. It does not select a
+closest barangay. A supplied value with no official match raises blocking
+`BRGY`, so the reviewer must correct or clear it before import.
 
 **`sector`** is the classification list: senior citizen (`SC`), person with
 disability (`PWD`), solo parent (`SP`), breastfeeding (`B`), LGBT, overseas

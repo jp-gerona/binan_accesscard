@@ -174,8 +174,7 @@ family from the queue, fill the missing card field through the same family form
 used for edits, and the Head drops off the queue when the card-readiness
 predicate is satisfied. The download link at `records/completeness/download`
 produces an `.xlsx` checklist for barangay follow-up. Chapter 12 covers the
-Head-only import warnings that send a family here. Import defaults do not change
-the manual family-entry form or its validation.
+Head-only import warnings that send a family here.
 
 ## Every mutation writes an audit row
 

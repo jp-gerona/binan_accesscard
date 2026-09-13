@@ -42,7 +42,7 @@ your browser request wait. Staged rows and their review state live in
 `app/Libraries/ImportStagingStore.php`; the importer and review query are in
 `app/Libraries/FamilyExcelImporter.php` and
 `app/Libraries/ImportReviewPresenter.php`. Confirm uses the same
-`FamilyRecordWriter` path as manual family entry, so it does not create a
+`FamilyRecordWriter` path as other family writes, so it does not create a
 separate kind of family record.
 
 ## What you see in review
@@ -109,8 +109,7 @@ Card Readiness is the Head-only follow-up queue at `records/completeness`. You
 can filter it by barangay or missing card field, open the family record to
 collect the value, and download its checklist. A family already on file is
 skipped rather than updated by the spreadsheet, so edit existing records in the
-application when the review says their details differ. These importer defaults
-do not change manual family-entry behavior.
+application when the review says their details differ.
 
 ## Resolve duplicate rows without losing the review trail
 
